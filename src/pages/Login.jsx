@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, setToken } from "../api.js";
+import { errorMessage } from "../errors.js";
 
 export default function Login({ onLogin }) {
   const [email, setEmail] = useState("loja@picnic.com");
@@ -19,11 +20,11 @@ export default function Login({ onLogin }) {
       setToken(data.token);
       onLogin(data.user);
       setSyncNote(
-        `PDV+ sincronizado: ${data.sync.updated} produtos com preço e estoque atualizados.`
+        `PDV+ sincronizado: ${data?.sync?.updated ?? data?.products?.length ?? 0} produtos com preço e estoque atualizados.`
       );
       navigate("/admin");
     } catch (err) {
-      setError(err.message);
+      setError(errorMessage(err));
     } finally {
       setBusy(false);
     }

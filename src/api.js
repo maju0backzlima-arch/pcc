@@ -1,4 +1,5 @@
 import { localApi } from "./localApi.js";
+import { errorMessage } from "./errors.js";
 
 const TOKEN_KEY = "picnic-auth";
 
@@ -11,37 +12,65 @@ export function setToken(token) {
   else localStorage.removeItem(TOKEN_KEY);
 }
 
+function staticHost() {
+  const host = String(window.location.hostname || "");
+  return (
+    host.includes("vercel.app") ||
+    host.includes("github.io") ||
+    host.includes("netlify.app") ||
+    host.includes("pages.dev")
+  );
+}
+
 function looksLikeHtml(text, res) {
   const type = String(res?.headers?.get("content-type") || "");
   return type.includes("text/html") || /^\s*</.test(text || "");
 }
 
+function ourApi(data) {
+  return data && (Array.isArray(data.products) || data.token || data.user || data.ok || data.sync || data.shoppingList);
+}
+
+let mode = staticHost() ? "local" : "auto";
+
 async function request(path, options = {}) {
+  if (mode === "local") return localApi.request(path, options);
+
   const headers = { Accept: "application/json", ...(options.headers || {}) };
   if (options.body && !(options.body instanceof FormData)) {
     headers["Content-Type"] = "application/json";
   }
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
+
   try {
     const res = await fetch(path, { ...options, headers });
     const text = await res.text();
     if (looksLikeHtml(text, res)) {
+      mode = "local";
       return localApi.request(path, options);
     }
     let data = {};
     try {
       data = text ? JSON.parse(text) : {};
     } catch {
+      mode = "local";
       return localApi.request(path, options);
     }
-    if (!res.ok) throw new Error(data.error || "Falha na requisição.");
+    if (!res.ok) {
+      if (!ourApi(data)) {
+        mode = "local";
+        return localApi.request(path, options);
+      }
+      throw new Error(errorMessage(data.error || data));
+    }
     return data;
   } catch (err) {
     if (err instanceof TypeError || err?.message === "Failed to fetch") {
+      mode = "local";
       return localApi.request(path, options);
     }
-    throw err;
+    throw new Error(errorMessage(err));
   }
 }
 

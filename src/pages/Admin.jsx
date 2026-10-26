@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { api } from "../api.js";
+import { errorMessage } from "../errors.js";
 
 function money(value) {
   return (Number(value) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -150,7 +151,7 @@ export default function Admin({ user }) {
     api
       .dashboard()
       .then((data) => applyDash(data, true))
-      .catch((err) => setError(err.message));
+      .catch((err) => setError(errorMessage(err)));
     let source;
     try {
       source = new EventSource(api.streamUrl());
@@ -215,7 +216,7 @@ export default function Admin({ user }) {
       if (okMessage) setMessage(okMessage);
       return true;
     } catch (err) {
-      setError(err.message);
+      setError(errorMessage(err));
       return false;
     } finally {
       setBusy(false);
@@ -253,7 +254,7 @@ export default function Admin({ user }) {
       const data = await api.updateShoppingItem(id, edit);
       applyDash(data, true);
     } catch (err) {
-      setError(err.message);
+      setError(errorMessage(err));
     }
   }
 
