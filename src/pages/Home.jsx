@@ -88,7 +88,14 @@ export default function Home() {
         <p>Atualiza sozinho. Esgotado significa que a receita ficou sem insumo.</p>
       </div>
 
-      {error ? <p className="err">{error}</p> : null}
+      {error ? (
+        <p className="err">
+          {error}
+          {error.includes("GitHub") || error.includes("servidor")
+            ? " Abra a prévia deste ambiente ou rode npm run dev na pasta do projeto."
+            : ""}
+        </p>
+      ) : null}
 
       <div className="cats">
         {categories.map((name) => (

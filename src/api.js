@@ -16,8 +16,19 @@ async function request(path, options = {}) {
   }
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(path, { ...options, headers });
-  const data = await res.json().catch(() => ({}));
+  let res;
+  try {
+    res = await fetch(path, { ...options, headers });
+  } catch {
+    throw new Error("Sem conexão com o servidor. Rode npm run dev — o GitHub Pages não executa o PDV+.");
+  }
+  const text = await res.text();
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error("O servidor não respondeu. Use npm run dev neste projeto; o GitHub só guarda o código.");
+  }
   if (!res.ok) throw new Error(data.error || "Falha na requisição.");
   return data;
 }

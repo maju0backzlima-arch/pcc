@@ -105,15 +105,24 @@ function requireAdminQuery(req, res, next) {
 async function start() {
   const app = express();
   app.use(express.json({ limit: "1mb" }));
+  app.use((req, res, next) => {
+    if (!req.path.startsWith("/api")) return next();
+    res.setHeader("Cache-Control", "no-store");
+    next();
+  });
 
   app.get("/api/catalog", (_req, res) => {
-    const store = withComputed(loadStore());
-    res.json({
-      storeName: store.settings.name,
-      tagline: store.settings.tagline,
-      syncedAt: store.settings.pdvAccount.lastSyncAt,
-      products: store.products.filter((item) => item.active !== false).map(publicProduct)
-    });
+    try {
+      const store = withComputed(loadStore());
+      res.json({
+        storeName: store.settings.name,
+        tagline: store.settings.tagline,
+        syncedAt: store.settings.pdvAccount.lastSyncAt,
+        products: store.products.filter((item) => item.active !== false).map(publicProduct)
+      });
+    } catch (err) {
+      res.status(500).json({ error: "Não foi possível ler o cardápio." });
+    }
   });
 
   app.post("/api/login", (req, res) => {
@@ -511,22 +520,38 @@ async function start() {
     app.use(vite.middlewares);
   }
 
+  app.use("/api", (req, res) => {
+    res.status(404).json({ error: "Rota não encontrada." });
+  });
+
+  app.use((err, req, res, next) => {
+    console.error(err);
+    if (req.path.startsWith("/api")) {
+      return res.status(500).json({ error: err.message || "Erro interno." });
+    }
+    next(err);
+  });
+
   setInterval(() => {
-    const store = loadStore();
-    if (store.settings.pdvAccount.autoSync === false) return;
-    let sale = null;
-    if (store.settings.pdvAccount.simulateSales !== false) {
-      sale = simulatePdvSale(store);
+    try {
+      const store = loadStore();
+      if (store.settings.pdvAccount.autoSync === false) return;
+      let sale = null;
+      if (store.settings.pdvAccount.simulateSales !== false) {
+        sale = simulatePdvSale(store);
+      }
+      if (!sale) {
+        rebuildPdvStock(store);
+        const catalog = simulatePdvCatalog(store);
+        applyPdvSync(store, catalog);
+        rebuildShoppingList(store);
+      }
+      saveStore(store);
+      broadcast(sale ? "sale" : "sync", sale ? { lastSale: sale } : {});
+    } catch (err) {
+      console.error("Falha no ciclo PDV+:", err.message);
     }
-    if (!sale) {
-      rebuildPdvStock(store);
-      const catalog = simulatePdvCatalog(store);
-      applyPdvSync(store, catalog);
-      rebuildShoppingList(store);
-    }
-    saveStore(store);
-    broadcast(sale ? "sale" : "sync", sale ? { lastSale: sale } : {});
-  }, 8000);
+  }, 20000);
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`PIC NIC ready on http://0.0.0.0:${PORT}`);

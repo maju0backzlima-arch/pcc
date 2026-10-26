@@ -79,6 +79,9 @@ export function seedStore() {
   };
 }
 
+let memory = null;
+let saveTimer = null;
+
 function hydrate(store) {
   if (!store || store.seedVersion !== SEED_VERSION || !store.products?.length) {
     const seeded = seedStore();
@@ -100,36 +103,51 @@ function hydrate(store) {
     active: item.active !== false
   }));
   store.shoppingList = store.shoppingList || [];
-  store.sales = store.sales || [];
-  store.purchases = store.purchases || [];
-  store.movements = store.movements || [];
+  store.sales = (store.sales || []).slice(0, 80);
+  store.purchases = (store.purchases || []).slice(0, 40);
+  store.movements = (store.movements || []).slice(0, 120);
   store.pdvStock = store.pdvStock || {};
   return store;
 }
 
 export function loadStore() {
+  if (memory) return memory;
   if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
   if (!fs.existsSync(storeFile)) {
-    const seeded = seedStore();
-    rebuildShoppingList(seeded);
-    saveStore(seeded);
-    return seeded;
+    memory = seedStore();
+    rebuildShoppingList(memory);
+    persistNow(memory);
+    return memory;
   }
   try {
-    const parsed = hydrate(JSON.parse(fs.readFileSync(storeFile, "utf8")));
-    saveStore(parsed);
-    return parsed;
+    memory = hydrate(JSON.parse(fs.readFileSync(storeFile, "utf8")));
+    return memory;
   } catch {
-    const seeded = seedStore();
-    rebuildShoppingList(seeded);
-    saveStore(seeded);
-    return seeded;
+    memory = seedStore();
+    rebuildShoppingList(memory);
+    persistNow(memory);
+    return memory;
   }
 }
 
-export function saveStore(store) {
+function persistNow(store) {
   if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
-  fs.writeFileSync(storeFile, JSON.stringify(store, null, 2));
+  const tmp = `${storeFile}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(store));
+  fs.renameSync(tmp, storeFile);
+}
+
+export function saveStore(store) {
+  memory = store;
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    try {
+      persistNow(memory);
+    } catch (err) {
+      console.error("Falha ao gravar estoque:", err.message);
+    }
+  }, 400);
 }
 
 export function rebuildPdvStock(store) {
