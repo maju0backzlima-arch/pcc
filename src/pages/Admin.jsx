@@ -99,6 +99,7 @@ export default function Admin({ user }) {
   const draftsRef = useRef({});
   const ingsRef = useRef({});
   const shopRef = useRef({});
+  const liveRef = useRef(false);
 
   function applyDash(data, forceDrafts = false) {
     setDash(data);
@@ -150,25 +151,53 @@ export default function Admin({ user }) {
       .dashboard()
       .then((data) => applyDash(data, true))
       .catch((err) => setError(err.message));
-    const source = new EventSource(api.streamUrl());
-    source.onopen = () => setLive(true);
-    source.onerror = () => setLive(false);
-    const onData = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        applyDash(data);
-        if (data.lastSale) setLastSale(data.lastSale);
+    let source;
+    try {
+      source = new EventSource(api.streamUrl());
+      source.onopen = () => {
+        liveRef.current = true;
         setLive(true);
-      } catch {}
+      };
+      source.onerror = () => {
+        liveRef.current = false;
+        setLive(false);
+      };
+      const onData = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          applyDash(data);
+          if (data.lastSale) setLastSale(data.lastSale);
+          liveRef.current = true;
+          setLive(true);
+        } catch {}
+      };
+      source.addEventListener("snapshot", onData);
+      source.addEventListener("sale", onData);
+      source.addEventListener("sync", onData);
+      source.addEventListener("shopping", onData);
+      source.addEventListener("products", onData);
+      source.addEventListener("ingredients", onData);
+      source.addEventListener("settings", onData);
+    } catch {
+      setLive(false);
+    }
+    const timer = setInterval(() => {
+      api
+        .dashboard()
+        .then((data) => applyDash(data))
+        .catch(() => {});
+      if (!liveRef.current) {
+        const sale = api.localTick?.();
+        if (sale) {
+          setLastSale(sale);
+          api.dashboard().then((data) => applyDash(data)).catch(() => {});
+        }
+      }
+    }, 12000);
+    return () => {
+      source?.close();
+      clearInterval(timer);
     };
-    source.addEventListener("snapshot", onData);
-    source.addEventListener("sale", onData);
-    source.addEventListener("sync", onData);
-    source.addEventListener("shopping", onData);
-    source.addEventListener("products", onData);
-    source.addEventListener("ingredients", onData);
-    source.addEventListener("settings", onData);
-    return () => source.close();
   }, [user]);
 
   useEffect(() => {

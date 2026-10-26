@@ -126,33 +126,38 @@ async function start() {
   });
 
   app.post("/api/login", (req, res) => {
-    const email = String(req.body?.email || "").trim().toLowerCase();
-    const password = String(req.body?.password || "");
-    const store = loadStore();
-    const user = store.users.find(
-      (entry) => entry.email.toLowerCase() === email && entry.password === password
-    );
-    if (!user) {
-      return res.status(401).json({ error: "E-mail ou senha inválidos." });
+    try {
+      const email = String(req.body?.email || "").trim().toLowerCase();
+      const password = String(req.body?.password || "");
+      const store = loadStore();
+      const user = store.users.find(
+        (entry) => entry.email.toLowerCase() === email && entry.password === password
+      );
+      if (!user) {
+        return res.status(401).json({ error: "E-mail ou senha inválidos." });
+      }
+
+      rebuildPdvStock(store);
+      const catalog = simulatePdvCatalog(store);
+      const sync = applyPdvSync(store, catalog);
+      rebuildShoppingList(store);
+      store.settings.pdvAccount.email = user.email;
+      store.settings.pdvAccount.connected = true;
+      saveStore(store);
+      broadcast("sync");
+
+      const token = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      sessions.set(token, { email: user.email, name: user.name, role: user.role });
+      res.json({
+        token,
+        user: { email: user.email, name: user.name, role: user.role },
+        sync,
+        ...snapshot()
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Não foi possível entrar. Tente de novo." });
     }
-
-    rebuildPdvStock(store);
-    const catalog = simulatePdvCatalog(store);
-    const sync = applyPdvSync(store, catalog);
-    rebuildShoppingList(store);
-    store.settings.pdvAccount.email = user.email;
-    store.settings.pdvAccount.connected = true;
-    saveStore(store);
-    broadcast("sync");
-
-    const token = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-    sessions.set(token, { email: user.email, name: user.name, role: user.role });
-    res.json({
-      token,
-      user: { email: user.email, name: user.name, role: user.role },
-      sync,
-      ...snapshot()
-    });
   });
 
   app.post("/api/logout", (req, res) => {
@@ -504,6 +509,18 @@ async function start() {
     res.json({ ok: true, changed, syncedAt: store.settings.pdvAccount.lastSyncAt });
   });
 
+  app.use("/api", (req, res) => {
+    res.status(404).json({ error: "Rota não encontrada." });
+  });
+
+  app.use((err, req, res, next) => {
+    console.error(err);
+    if (req.path?.startsWith("/api") || req.originalUrl?.startsWith("/api")) {
+      return res.status(500).json({ error: err.message || "Erro interno." });
+    }
+    next(err);
+  });
+
   if (process.env.NODE_ENV === "production") {
     const dist = path.join(root, "dist");
     app.use(express.static(dist));
@@ -517,20 +534,13 @@ async function start() {
       },
       appType: "spa"
     });
-    app.use(vite.middlewares);
+    app.use((req, res, next) => {
+      if (req.path.startsWith("/api") || req.originalUrl.startsWith("/api")) {
+        return res.status(404).json({ error: "Rota não encontrada." });
+      }
+      vite.middlewares(req, res, next);
+    });
   }
-
-  app.use("/api", (req, res) => {
-    res.status(404).json({ error: "Rota não encontrada." });
-  });
-
-  app.use((err, req, res, next) => {
-    console.error(err);
-    if (req.path.startsWith("/api")) {
-      return res.status(500).json({ error: err.message || "Erro interno." });
-    }
-    next(err);
-  });
 
   setInterval(() => {
     try {

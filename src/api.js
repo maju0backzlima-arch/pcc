@@ -1,3 +1,5 @@
+import { localApi } from "./localApi.js";
+
 const TOKEN_KEY = "picnic-auth";
 
 export function getToken() {
@@ -9,28 +11,38 @@ export function setToken(token) {
   else localStorage.removeItem(TOKEN_KEY);
 }
 
+function looksLikeHtml(text, res) {
+  const type = String(res?.headers?.get("content-type") || "");
+  return type.includes("text/html") || /^\s*</.test(text || "");
+}
+
 async function request(path, options = {}) {
-  const headers = { ...(options.headers || {}) };
+  const headers = { Accept: "application/json", ...(options.headers || {}) };
   if (options.body && !(options.body instanceof FormData)) {
     headers["Content-Type"] = "application/json";
   }
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
-  let res;
   try {
-    res = await fetch(path, { ...options, headers });
-  } catch {
-    throw new Error("Sem conexão com o servidor. Rode npm run dev — o GitHub Pages não executa o PDV+.");
+    const res = await fetch(path, { ...options, headers });
+    const text = await res.text();
+    if (looksLikeHtml(text, res)) {
+      return localApi.request(path, options);
+    }
+    let data = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      return localApi.request(path, options);
+    }
+    if (!res.ok) throw new Error(data.error || "Falha na requisição.");
+    return data;
+  } catch (err) {
+    if (err instanceof TypeError || err?.message === "Failed to fetch") {
+      return localApi.request(path, options);
+    }
+    throw err;
   }
-  const text = await res.text();
-  let data = {};
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    throw new Error("O servidor não respondeu. Use npm run dev neste projeto; o GitHub só guarda o código.");
-  }
-  if (!res.ok) throw new Error(data.error || "Falha na requisição.");
-  return data;
 }
 
 export const api = {
@@ -66,5 +78,6 @@ export const api = {
   removeShoppingItem: (id) =>
     request(`/api/admin/shopping/${id}/remove`, { method: "POST" }),
   rebuildShopping: () => request("/api/admin/shopping/rebuild", { method: "POST" }),
-  streamUrl: () => `/api/admin/stream?token=${encodeURIComponent(getToken())}`
+  streamUrl: () => `/api/admin/stream?token=${encodeURIComponent(getToken())}`,
+  localTick: () => localApi.simulateSale()
 };
