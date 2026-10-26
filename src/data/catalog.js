@@ -139,6 +139,12 @@ export const defaultSettings = {
   pdvWebhookSecret: "picnic-pdvplus",
   pdvPlusEnabled: true,
   currency: "BRL",
+  shopping: {
+    autoGenerate: true,
+    includeSoon: true,
+    targetMultiplier: 2.5,
+    soonFactor: 1.25
+  },
   pdvAccount: {
     email: "",
     password: "",
@@ -146,6 +152,7 @@ export const defaultSettings = {
     storeName: "PIC NIC Food Truck Café",
     token: "",
     autoSync: true,
+    simulateSales: true,
     connected: false,
     lastTestAt: null,
     lastError: "",

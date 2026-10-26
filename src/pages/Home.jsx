@@ -25,7 +25,7 @@ export default function Home() {
           if (active) setError(err.message);
         });
     load();
-    const timer = setInterval(load, 20000);
+    const timer = setInterval(load, 5000);
     return () => {
       active = false;
       clearInterval(timer);
@@ -45,47 +45,47 @@ export default function Home() {
     <main className="page">
       <section className="hero">
         <div>
-          <p className="kicker">Café artesanal · cardápio do dia</p>
-          <h1>Sabor de food truck, atendimento de casa.</h1>
+          <p className="kicker">Painel interno · o que dá para servir agora</p>
+          <h1>Cardápio ao vivo da equipe.</h1>
           <p>
-            Cappuccinos, sucos, gratinados e omeletes feitos na hora. Preço e estoque
-            atualizados direto do PDV+ — o que você vê aqui é o que está no caixa.
+            Este é o quadro da operação. Cada venda no PDV+ baixa o estoque e a
+            disponibilidade muda aqui na hora. Para compras, use a central da equipe.
           </p>
         </div>
         <div className="hero-card">
-          <h3>Pronto para servir</h3>
+          <h3>Como a equipe usa</h3>
           <p>
-            Peça no balcão, leve para a mesa ou para a estrada. Cardápio curto, execução
-            rápida e o mesmo padrão PIC NIC de sempre.
+            Confira o que ainda tem, chame o cliente no balcão e, se faltar insumo, a
+            lista de mercado na central já aponta o que comprar.
           </p>
         </div>
       </section>
 
       <section className="banners">
         <article className="banner wine">
-          <strong>Café na hora, sem fila de espera.</strong>
-          <span>Do moinho à xícara: o cardápio quente sai alinhado com o estoque do PDV+.</span>
+          <strong>Vendeu no PDV+? Já atualizou.</strong>
+          <span>A venda consome a receita. O item some daqui se o insumo acabar.</span>
         </article>
         <article className="banner gold">
-          <strong>Peça agora. Leve quente.</strong>
-          <span>Gratinados, omeletes e pães na chapa para o almoço rápido no ponto.</span>
+          <strong>Faltou alguma coisa?</strong>
+          <span>Abra a central da equipe: a lista de mercado se monta sozinha, com prioridade.</span>
         </article>
         <article className="banner">
-          <strong>Preço certo. Estoque real.</strong>
+          <strong>Preço e estoque reais.</strong>
           <span>
             {catalog?.syncedAt
-              ? `Última sincronização PDV+: ${new Date(catalog.syncedAt).toLocaleString("pt-BR")}`
-              : "Valores oficiais da loja, atualizados a cada login do lojista."}
+              ? `Última atualização PDV+: ${new Date(catalog.syncedAt).toLocaleString("pt-BR")}`
+              : "Entre na central para ligar o PDV+ e a lista de mercado."}
           </span>
         </article>
       </section>
 
       <div className="section-head">
         <div>
-          <p className="kicker">Cardápio</p>
-          <h2>Escolha e peça no balcão</h2>
+          <p className="kicker">Disponível agora</p>
+          <h2>O que o caixa ainda pode vender</h2>
         </div>
-        <p>Itens alinhados, porções claras e disponibilidade em tempo real.</p>
+        <p>Atualiza sozinho. Esgotado significa que a receita ficou sem insumo.</p>
       </div>
 
       {error ? <p className="err">{error}</p> : null}

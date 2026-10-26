@@ -33,8 +33,8 @@ export default function Login({ onLogin }) {
     <div className="login-wrap">
       <form className="login-card" onSubmit={submit}>
         <img src="/logo.webp" alt="PIC NIC" />
-        <h1>Acesso do lojista</h1>
-        <p>Ao entrar, o site busca preço e estoque direto no PDV+.</p>
+        <h1>Central da equipe</h1>
+        <p>Ambiente interno: cardápio, estoque e lista de mercado ligados ao PDV+.</p>
         <div className="form">
           <label>
             E-mail

@@ -56,13 +56,13 @@ export default function App() {
           </NavLink>
           {user ? (
             <>
-              <NavLink to="/admin">Painel do lojista</NavLink>
+              <NavLink to="/admin">Central da equipe</NavLink>
               <button className="linkish" onClick={logout}>
                 Sair
               </button>
             </>
           ) : (
-            <NavLink to="/login">Entrar</NavLink>
+            <NavLink to="/login">Entrar na central</NavLink>
           )}
         </nav>
       </header>
@@ -72,8 +72,8 @@ export default function App() {
         <Route path="/admin" element={<Admin user={user} />} />
       </Routes>
       <footer className="foot">
-        <span>PIC NIC · Food Truck Café</span>
-        <span>Preços e estoque sincronizados com PDV+</span>
+        <span>PIC NIC · uso interno da equipe</span>
+        <span>Lista de mercado atualizada a cada venda do PDV+</span>
       </footer>
     </div>
   );
