@@ -42,11 +42,16 @@ import {
   entradaCompra,
   gerarListaComprasInsumos
 } from "../src/modules/estoque/cafeteria.js";
+import {
+  defaultFornecedores,
+  aplicarFornecedor,
+  upsertFornecedor
+} from "../src/modules/estoque/fornecedores.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.join(__dirname, "data");
 const storeFile = path.join(dataDir, "store.json");
-const SEED_VERSION = 6;
+const SEED_VERSION = 7;
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -114,6 +119,7 @@ export function seedStore() {
     notes: [],
     fechamentos: [],
     notas: [],
+    fornecedores: clone(defaultFornecedores),
     settings: clone(defaultSettings),
     users: clone(users),
     pdvCatalog: clone(products).map((product) => ({
@@ -157,11 +163,6 @@ function hydrate(store) {
       ...(store.settings.financeiro?.settlementDays || {})
     }
   };
-  store.ingredients = (store.ingredients || []).map((item) => normalizeInsumo({
-    ...item,
-    targetStock: item.targetStock ?? roundQty((item.minStock || 0) * 2.5),
-    active: item.active !== false
-  }));
   store.shoppingList = store.shoppingList || [];
   store.sales = (store.sales || []).slice(0, 80);
   store.purchases = (store.purchases || []).slice(0, 40);
@@ -175,7 +176,17 @@ function hydrate(store) {
   store.notes = store.notes || [];
   store.fechamentos = store.fechamentos || [];
   store.notas = store.notas || [];
+  store.fornecedores = store.fornecedores?.length ? store.fornecedores : clone(defaultFornecedores);
   store.settings.fiscal = { ...defaultFiscal(), ...(store.settings.fiscal || {}) };
+  store.ingredients = (store.ingredients || []).map((item) => {
+    const next = normalizeInsumo({
+      ...item,
+      targetStock: item.targetStock ?? roundQty((item.minStock || 0) * 2.5),
+      active: item.active !== false
+    });
+    aplicarFornecedor(next, store, next.fornecedorId || next.fornecedor || next.supplier);
+    return next;
+  });
   store.products = (store.products || []).map((product) => normalizeProduto(normalizeProdutoVenda(product)));
   store.users = (store.users || []).map((user) => ({
     ...user,
@@ -493,5 +504,7 @@ export {
   cancelarNota,
   inutilizarFaixa,
   notasDoMes,
-  xmlsDoMes
+  xmlsDoMes,
+  upsertFornecedor,
+  aplicarFornecedor
 };

@@ -1,9 +1,11 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, NavLink } from "react-router-dom";
+import { Radio, ShoppingCart, TriangleAlert, Wallet } from "lucide-react";
 import { api } from "../api.js";
 import { errorMessage } from "../errors.js";
 import { CMV_ALERTA, cmvProduto } from "../modules/financeiro/engine.js";
 import { canEditFicha, canSeeDre } from "../auth/permissoes.js";
+import { Btn, ConfirmDel, Count, DupBtn, FornecedorSelect, InlineCell, QuickSelect, TabBtn, useToast } from "../ui/ui.jsx";
 
 function money(value) {
   return (Number(value) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -64,14 +66,14 @@ function ingredientDraft(item) {
   };
 }
 
-export default function Admin({ user }) {
+export default function Admin({ user, search = "" }) {
   const editaFicha = canEditFicha(user);
   const veDre = canSeeDre(user);
+  const toast = useToast();
   const [dash, setDash] = useState(emptyDash);
   const [tab, setTab] = useState("lista");
   const [query, setQuery] = useState("");
   const [priority, setPriority] = useState("todos");
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [live, setLive] = useState(false);
   const [lastSale, setLastSale] = useState(null);
@@ -80,6 +82,7 @@ export default function Admin({ user }) {
   const [ingDrafts, setIngDrafts] = useState({});
   const [shopEdits, setShopEdits] = useState({});
   const [recipeOpen, setRecipeOpen] = useState("");
+  const [highlightId, setHighlightId] = useState("");
   const [newShop, setNewShop] = useState({ name: "", buyQty: 1, unit: "un", supplier: "", notes: "" });
   const [newIng, setNewIng] = useState({
     name: "",
@@ -218,8 +221,8 @@ export default function Admin({ user }) {
     try {
       const data = await task();
       if (data?.products) applyDash(data, forceDrafts);
-      if (okMessage) setMessage(okMessage);
-      return true;
+      if (okMessage) toast(okMessage);
+      return data || true;
     } catch (err) {
       setError(errorMessage(err));
       return false;
@@ -263,6 +266,15 @@ export default function Admin({ user }) {
     }
   }
 
+  function saveRecipe(item, recipe) {
+    changeDraft(item.id, { recipe });
+    const fichaTecnica = (recipe || []).map((row) => ({
+      insumo_id: row.ingredientId || row.insumo_id,
+      quantidade_usada: Number(row.qty ?? row.quantidade_usada ?? 0)
+    }));
+    run(() => api.updateProduct(item.id, { recipe, fichaTecnica }), "Salvo", true);
+  }
+
   async function saveProduct(item) {
     const draft = draftsRef.current[item.id] || {};
     const payload = {
@@ -278,7 +290,7 @@ export default function Admin({ user }) {
   }
 
   const list = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = (query || search).trim().toLowerCase();
     return (dash.shoppingList || []).filter((item) => {
       const matchQ =
         !q ||
@@ -288,7 +300,7 @@ export default function Admin({ user }) {
       const matchP = priority === "todos" || item.priority === priority;
       return matchQ && matchP;
     });
-  }, [dash.shoppingList, query, priority]);
+  }, [dash.shoppingList, query, priority, search]);
 
   const summary = dash.shoppingSummary || emptyDash.shoppingSummary;
 
@@ -312,46 +324,71 @@ export default function Admin({ user }) {
         </ol>
       </div>
 
-      <div className="banners">
-        <article className="banner wine">
-          <strong>
-            <span className={`status-dot ${live ? "on" : ""}`} />
-            {live ? "Lista ao vivo com o PDV+" : "Reconectando ao PDV+"}
-          </strong>
-          <span>
+      <div className="bento">
+        <article className="kpi-card">
+          <span className="kpi-icon green"><Radio size={16} /></span>
+          <span className="kpi-label">PDV+</span>
+          <strong className="kpi-value">{live ? "Ao vivo" : "Offline"}</strong>
+          <span className={`kpi-badge ${live ? "up" : "down"}`}>
+            {lastSale ? when(lastSale.at) : when(dash.syncedAt)}
+          </span>
+        </article>
+        <article className="kpi-card">
+          <span className="kpi-icon red"><TriangleAlert size={16} /></span>
+          <span className="kpi-label">Urgentes</span>
+          <strong className="kpi-value"><Count value={summary.urgente} /></strong>
+          <span className={`kpi-badge ${summary.urgente ? "down" : "up"}`}>Abaixo do mínimo</span>
+        </article>
+        <article className="kpi-card">
+          <span className="kpi-icon amber"><ShoppingCart size={16} /></span>
+          <span className="kpi-label">Itens na lista</span>
+          <strong className="kpi-value"><Count value={summary.total} /></strong>
+          <span className="kpi-badge up">{summary.atencao} em atenção</span>
+        </article>
+        <article className="kpi-card">
+          <span className="kpi-icon brown"><Wallet size={16} /></span>
+          <span className="kpi-label">Estimado</span>
+          <strong className="kpi-value"><Count value={summary.estimate} money /></strong>
+          <span className="kpi-badge up">{summary.planejado} planejados</span>
+        </article>
+      </div>
+      <div className="bento-main">
+        <div className="card">
+          <h3>Última venda PDV+</h3>
+          <p>
             {lastSale
-              ? `Última venda: ${lastSale.items.map((item) => `${item.qty}x ${item.name}`).join(", ")} · ${when(lastSale.at)}${
+              ? `${lastSale.items.map((item) => `${item.qty}x ${item.name}`).join(", ")} · ${when(lastSale.at)}${
                   lastSale.consumed?.length
-                    ? ` · baixou ${lastSale.consumed
-                        .slice(0, 4)
-                        .map((item) => `${item.name} ${qty(item.qty, item.unit)}`)
-                        .join(", ")}`
+                    ? ` · baixou ${lastSale.consumed.slice(0, 4).map((item) => `${item.name} ${qty(item.qty, item.unit)}`).join(", ")}`
                     : ""
                 }`
               : `Última sincronização: ${when(dash.syncedAt)}`}
-          </span>
-        </article>
-        <article className="banner gold">
-          <strong>{summary.urgente} itens urgentes</strong>
-          <span>Acabaram ou estão abaixo do mínimo. Compre primeiro para não parar o cardápio.</span>
-        </article>
-        <article className="banner">
-          <strong>{money(summary.estimate)} estimados</strong>
-          <span>
-            {summary.total} itens na lista · {summary.atencao} em atenção · {summary.planejado} planejados.
-          </span>
-        </article>
+          </p>
+        </div>
+        <div className="card">
+          <h3>Estoque crítico</h3>
+          <ul className="alert-list">
+            {(dash.shoppingList || []).filter((item) => item.priority === "urgente").slice(0, 5).map((item) => (
+              <li className="alert-item" key={item.id}>
+                <b>{item.name}</b>
+                <span className="muted tabular">{qty(item.buyQty, item.unit)}</span>
+              </li>
+            ))}
+            {(dash.shoppingList || []).filter((item) => item.priority === "urgente").length === 0 ? (
+              <li className="muted">Nenhum insumo urgente.</li>
+            ) : null}
+          </ul>
+        </div>
       </div>
 
-      {message ? <p className="ok">{message}</p> : null}
       {error ? <p className="err">{error}</p> : null}
 
       <div className="cats">
         {TABS.map((item) => (
-          <button key={item.id} className={`tab ${tab === item.id ? "active" : ""}`} onClick={() => setTab(item.id)}>
+          <TabBtn key={item.id} active={tab === item.id} onClick={() => setTab(item.id)}>
             {item.label}
             {item.id === "lista" && summary.urgente ? ` (${summary.urgente})` : ""}
-          </button>
+          </TabBtn>
         ))}
       </div>
 
@@ -376,12 +413,12 @@ export default function Admin({ user }) {
                   <option value="planejado">Planejado</option>
                 </select>
               </label>
-              <button className="btn btn-ghost" disabled={busy} onClick={() => run(api.rebuildShopping, "Lista recalculada com o estoque atual.", true)}>
+              <Btn className="btn-ghost" disabled={busy} onClick={() => run(api.rebuildShopping, "Lista recalculada com o estoque atual.", true)}>
                 Recalcular lista
-              </button>
-              <button className="btn btn-primary" disabled={busy} onClick={() => run(api.sync, "PDV+ sincronizado.", true)}>
+              </Btn>
+              <Btn className="btn-primary" disabled={busy} onClick={() => run(api.sync, "PDV+ sincronizado.", true)}>
                 Sincronizar PDV+
-              </button>
+              </Btn>
             </div>
           </div>
 
@@ -420,8 +457,8 @@ export default function Admin({ user }) {
                 placeholder="Onde comprar, marca, recado para a equipe"
               />
             </label>
-            <button
-              className="btn btn-gold"
+            <Btn
+              className="btn-gold"
               style={{ marginTop: 12 }}
               disabled={busy}
               onClick={async () => {
@@ -434,7 +471,7 @@ export default function Admin({ user }) {
               }}
             >
               Adicionar na lista
-            </button>
+            </Btn>
           </div>
 
           <div className="card">
@@ -498,8 +535,8 @@ export default function Admin({ user }) {
                       <div className="shop-foot">
                         <strong>{money((Number(edit.buyQty) || 0) * (item.costPerUnit || 0))}</strong>
                         <div className="row">
-                          <button
-                            className="btn btn-gold"
+                          <Btn
+                            className="btn-gold"
                             disabled={busy}
                             onClick={() =>
                               run(
@@ -510,14 +547,14 @@ export default function Admin({ user }) {
                             }
                           >
                             Marcar comprado
-                          </button>
-                          <button
-                            className="btn btn-ghost"
+                          </Btn>
+                          <Btn
+                            className="btn-ghost"
                             disabled={busy}
                             onClick={() => run(() => api.removeShoppingItem(item.id), `${item.name} removido da lista.`, true)}
                           >
                             Tirar
-                          </button>
+                          </Btn>
                         </div>
                       </div>
                     </article>
@@ -567,17 +604,21 @@ export default function Admin({ user }) {
               </label>
               <label>
                 Fornecedor
-                <input value={newIng.supplier} onChange={(e) => setNewIng({ ...newIng, supplier: e.target.value })} />
+                <FornecedorSelect
+                  value={newIng.supplier}
+                  list={dash.fornecedores || []}
+                  onSave={(v) => setNewIng({ ...newIng, supplier: v, fornecedorId: v })}
+                />
               </label>
             </div>
-            <button
-              className="btn btn-primary"
+            <Btn
+              className="btn-primary"
               style={{ marginTop: 12 }}
               disabled={busy}
               onClick={() => run(() => api.createIngredient(newIng), "Insumo cadastrado. A lista passa a considerar este item.", true)}
             >
               Cadastrar insumo
-            </button>
+            </Btn>
           </div>
           <div className="card">
             <h3>Estoque de insumos</h3>
@@ -594,37 +635,65 @@ export default function Admin({ user }) {
                 </tr>
               </thead>
               <tbody>
-                {(dash.ingredients || []).map((item) => {
-                  const draft = ingDrafts[item.id] || item;
+                 {(dash.ingredients || []).map((item) => {
                   const low = Number(item.stock) <= Number(item.minStock);
                   return (
-                    <tr key={item.id}>
+                    <tr key={item.id} className={highlightId === item.id ? "cmv-alerta" : ""}>
                       <td>
-                        <input value={draft.name} onChange={(e) => changeIng(item.id, { name: e.target.value })} />
+                        <InlineCell
+                          value={item.name}
+                          onSave={(v) => run(() => api.updateIngredient(item.id, { name: v }), `${v} atualizado.`, true)}
+                        />
                         <div className="muted">
                           {item.category} · {item.unit}
                         </div>
                       </td>
                       <td>
-                        <input type="number" min="0" value={draft.stock} onChange={(e) => changeIng(item.id, { stock: e.target.value })} />
+                        <InlineCell
+                          type="number"
+                          value={item.stock}
+                          onSave={(v) => run(() => api.updateIngredient(item.id, { stock: v }), "Estoque atualizado.", true)}
+                        />
                         {low ? <div className="err">Abaixo do mínimo</div> : null}
                       </td>
                       <td>
-                        <input type="number" min="0" value={draft.minStock} onChange={(e) => changeIng(item.id, { minStock: e.target.value })} />
+                        <InlineCell
+                          type="number"
+                          value={item.minStock}
+                          onSave={(v) => run(() => api.updateIngredient(item.id, { minStock: v }), "Mínimo atualizado.", true)}
+                        />
                       </td>
                       <td>
-                        <input type="number" min="0" value={draft.targetStock} onChange={(e) => changeIng(item.id, { targetStock: e.target.value })} />
+                        <InlineCell
+                          type="number"
+                          value={item.targetStock}
+                          onSave={(v) => run(() => api.updateIngredient(item.id, { targetStock: v }), "Ideal atualizado.", true)}
+                        />
                       </td>
                       <td>
-                        <input type="number" min="0" step="0.001" value={draft.costPerUnit} onChange={(e) => changeIng(item.id, { costPerUnit: e.target.value })} />
+                        <InlineCell
+                          type="number"
+                          step="0.001"
+                          value={item.costPerUnit}
+                          format={(v) => money(v)}
+                          onSave={(v) => run(() => api.updateIngredient(item.id, { costPerUnit: v }), "Custo atualizado.", true)}
+                        />
                       </td>
                       <td>
-                        <input value={draft.supplier || ""} onChange={(e) => changeIng(item.id, { supplier: e.target.value })} />
+                        <FornecedorSelect
+                          value={item.fornecedorId || item.supplier}
+                          list={dash.fornecedores || []}
+                          onSave={(v) => run(() => api.updateIngredient(item.id, { fornecedorId: v }), "Fornecedor vinculado.", true)}
+                        />
                       </td>
                       <td>
-                        <button className="btn btn-gold" disabled={busy} onClick={() => run(() => api.updateIngredient(item.id, draft), `${draft.name} atualizado.`, true)}>
-                          Salvar
-                        </button>
+                        <div className="row-actions">
+                          <DupBtn onClick={async () => {
+                            const data = await run(() => api.cloneIngredient(item.id), "Cópia criada", true);
+                            if (data?.clonedId) setHighlightId(data.clonedId);
+                          }} />
+                          <ConfirmDel onConfirm={() => run(() => api.deleteIngredient(item.id), "Insumo excluído", true)} />
+                        </div>
                       </td>
                     </tr>
                   );
@@ -657,14 +726,14 @@ export default function Admin({ user }) {
                 <input value={newProduct.category} onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value })} />
               </label>
             </div>
-            <button
-              className="btn btn-primary"
+            <Btn
+              className="btn-primary"
               style={{ marginTop: 12 }}
               disabled={busy}
               onClick={() => run(() => api.createProduct(newProduct), "Produto criado. Depois ligue a receita nos insumos.", true)}
             >
               Criar produto
-            </button>
+            </Btn>
           </div>
           <div className="card">
             <h3>Preço, estoque, visibilidade e receita</h3>
@@ -685,52 +754,96 @@ export default function Admin({ user }) {
                   const cmv = cmvProduto(item, dash.ingredients || []);
                   return (
                     <Fragment key={item.id}>
-                      <tr className={cmv.alerta ? "cmv-alerta" : ""}>
+                       <tr className={`${cmv.alerta || highlightId === item.id ? "cmv-alerta" : ""} ${item.active === false ? "off-row" : ""}`}>
                         <td>
-                          <input value={draft.name} onChange={(e) => changeDraft(item.id, { name: e.target.value })} />
-                          <div className="muted">{item.category}</div>
+                          <InlineCell
+                            value={draft.name}
+                            onSave={(v) => {
+                              changeDraft(item.id, { name: v });
+                              run(() => api.updateProduct(item.id, { name: v, nome: v }), "Salvo", true);
+                            }}
+                          />
+                          <div className="muted">{item.category} · {item.sku}</div>
+                          <div className="row" style={{ marginTop: 6 }}>
+                            <QuickSelect
+                              value={item.tipo || "preparo"}
+                              options={[{ value: "preparo", label: "Preparo 102" }, { value: "revenda", label: "Revenda 500" }]}
+                              onSave={(v) => run(() => api.updateProduct(item.id, { tipo: v, csosn: v === "revenda" ? "500" : "102" }), "Salvo", true)}
+                            />
+                          </div>
+                          <div className="row" style={{ marginTop: 6 }}>
+                            <InlineCell value={item.ncm || ""} format={(v) => `NCM ${v || "—"}`} onSave={(v) => run(() => api.updateProduct(item.id, { ncm: v }), "Salvo", true)} />
+                            <InlineCell value={item.cfop || "5102"} format={(v) => `CFOP ${v}`} onSave={(v) => run(() => api.updateProduct(item.id, { cfop: v }), "Salvo", true)} />
+                            <InlineCell value={item.csosn || ""} format={(v) => `CSOSN ${v || "—"}`} onSave={(v) => run(() => api.updateProduct(item.id, { csosn: v }), "Salvo", true)} />
+                          </div>
                         </td>
                         <td>
                           {money(item.lastPdvPrice ?? item.price)}
                           <div className="muted">{item.lastPdvStock ?? item.available} un.</div>
                         </td>
                         <td>
-                          <input type="number" min="0" step="0.01" value={draft.price} onChange={(e) => changeDraft(item.id, { price: e.target.value })} />
+                          <InlineCell
+                            type="number"
+                            step="0.01"
+                            value={draft.price}
+                            format={(v) => money(v)}
+                            onSave={(v) => {
+                              changeDraft(item.id, { price: v });
+                              run(() => api.updateProduct(item.id, { price: v }), "Preço atualizado.", true);
+                            }}
+                          />
                           {item.priceOverride != null ? (
-                            <button className="btn btn-ghost" style={{ marginTop: 6 }} onClick={() => run(() => api.updateProduct(item.id, { clearPrice: true }), "Preço voltou para o PDV+.", true)}>
+                            <Btn className="btn-ghost" style={{ marginTop: 6 }} onClick={() => run(() => api.updateProduct(item.id, { clearPrice: true }), "Preço voltou para o PDV+.", true)}>
                               Usar PDV+
-                            </button>
+                            </Btn>
                           ) : null}
                         </td>
                         <td>
-                          {cmv.percent}%
-                          <div className="muted">{money(cmv.cmv)}{cmv.alerta ? ` · >${CMV_ALERTA}%` : ""}</div>
+                          <span className={`pill cmv-pill ${cmv.alerta ? "alerta" : ""}`}>
+                            <Count value={cmv.percent} digits={1} />%
+                          </span>
+                          <div className="muted tabular">{money(cmv.cmv)}{cmv.alerta ? ` · >${CMV_ALERTA}%` : ""}</div>
                         </td>
                         <td>
-                          <input type="number" min="0" value={draft.stock} onChange={(e) => changeDraft(item.id, { stock: e.target.value })} />
+                          <InlineCell
+                            type="number"
+                            value={draft.stock}
+                            onSave={(v) => {
+                              changeDraft(item.id, { stock: v });
+                              run(() => api.updateProduct(item.id, { stock: v }), "Estoque atualizado.", true);
+                            }}
+                          />
                           {item.stockOverride != null ? (
-                            <button className="btn btn-ghost" style={{ marginTop: 6 }} onClick={() => run(() => api.updateProduct(item.id, { clearStock: true }), "Estoque voltou para o PDV+.", true)}>
+                            <Btn className="btn-ghost" style={{ marginTop: 6 }} onClick={() => run(() => api.updateProduct(item.id, { clearStock: true }), "Estoque voltou para o PDV+.", true)}>
                               Usar PDV+
-                            </button>
+                            </Btn>
                           ) : null}
                         </td>
                         <td>
-                          <div className="row">
-                            <button className="btn btn-gold" disabled={busy} onClick={() => saveProduct(item)}>
+                          <div className="row-actions">
+                            <Btn className="btn-gold" disabled={busy} onClick={() => saveProduct(item)}>
                               Salvar
-                            </button>
-                            <button
-                              className="btn btn-ghost"
+                            </Btn>
+                            <Btn
+                              className="btn-ghost"
                               disabled={busy}
                               onClick={() => run(() => api.updateProduct(item.id, { active: item.active === false }), item.active === false ? "Produto reativado." : "Produto ocultado.", true)}
                             >
                               {item.active === false ? "Ativar" : "Ocultar"}
-                            </button>
+                            </Btn>
                             {editaFicha ? (
-                            <button className="btn btn-ghost" onClick={() => setRecipeOpen(recipeOpen === item.id ? "" : item.id)}>
+                            <Btn className="btn-ghost" onClick={() => setRecipeOpen(recipeOpen === item.id ? "" : item.id)}>
                               Receita
-                            </button>
+                            </Btn>
                             ) : null}
+                            <DupBtn onClick={async () => {
+                              const data = await run(() => api.cloneProduct(item.id), "Cópia criada", true);
+                              if (data?.clonedId) {
+                                setHighlightId(data.clonedId);
+                                setRecipeOpen(data.clonedId);
+                              }
+                            }} />
+                            <ConfirmDel onConfirm={() => run(() => api.deleteProduct(item.id), "Produto excluído", true)} />
                           </div>
                         </td>
                       </tr>
@@ -745,7 +858,7 @@ export default function Admin({ user }) {
                                     value={row.ingredientId}
                                     onChange={(e) => {
                                       const recipe = draft.recipe.map((entry, i) => (i === index ? { ...entry, ingredientId: e.target.value } : entry));
-                                      changeDraft(item.id, { recipe });
+                                      saveRecipe(item, recipe);
                                     }}
                                   >
                                     {(dash.ingredients || []).map((ing) => (
@@ -763,25 +876,27 @@ export default function Admin({ user }) {
                                       const recipe = draft.recipe.map((entry, i) => (i === index ? { ...entry, qty: Number(e.target.value) } : entry));
                                       changeDraft(item.id, { recipe });
                                     }}
+                                    onBlur={(e) => {
+                                      const recipe = draft.recipe.map((entry, i) => (i === index ? { ...entry, qty: Number(e.target.value) } : entry));
+                                      saveRecipe(item, recipe);
+                                    }}
                                   />
-                                  <button
-                                    className="btn btn-ghost"
-                                    onClick={() => changeDraft(item.id, { recipe: draft.recipe.filter((_, i) => i !== index) })}
+                                  <Btn
+                                    className="btn-ghost"
+                                    onClick={() => saveRecipe(item, draft.recipe.filter((_, i) => i !== index))}
                                   >
                                     Tirar
-                                  </button>
+                                  </Btn>
                                 </div>
                               ))}
-                              <button
-                                className="btn btn-ghost"
+                              <Btn
+                                className="btn-ghost"
                                 onClick={() =>
-                                  changeDraft(item.id, {
-                                    recipe: [...(draft.recipe || []), { ingredientId: dash.ingredients[0]?.id || "", qty: 1 }]
-                                  })
+                                  saveRecipe(item, [...(draft.recipe || []), { ingredientId: dash.ingredients[0]?.id || "", qty: 1 }])
                                 }
                               >
                                 Incluir insumo na receita
-                              </button>
+                              </Btn>
                             </div>
                           </td>
                         </tr>
@@ -820,8 +935,8 @@ export default function Admin({ user }) {
                 Quantidade
                 <input type="number" min="1" value={salePick.qty} onChange={(e) => setSalePick({ ...salePick, qty: e.target.value })} />
               </label>
-              <button
-                className="btn btn-primary"
+              <Btn
+                className="btn-primary"
                 disabled={busy || !salePick.productId}
                 onClick={() =>
                   run(
@@ -832,7 +947,7 @@ export default function Admin({ user }) {
                 }
               >
                 Registrar venda
-              </button>
+              </Btn>
             </div>
           </div>
           <div className="split">
@@ -927,9 +1042,9 @@ export default function Admin({ user }) {
                 onChange={(e) => setShopSettings({ ...shopSettings, targetMultiplier: e.target.value })}
               />
             </label>
-            <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={busy} onClick={() => run(() => api.updateSettings({ shopping: shopSettings }), "Regras da lista salvas.")}>
+            <Btn className="btn-primary" style={{ marginTop: 12 }} disabled={busy} onClick={() => run(() => api.updateSettings({ shopping: shopSettings }), "Regras da lista salvas.")}>
               Salvar regras
-            </button>
+            </Btn>
           </div>
           <div className="card">
             <h3>PDV+ e acesso</h3>
@@ -945,9 +1060,9 @@ export default function Admin({ user }) {
               />
               Simular vendas do caixa (útil para treinar a equipe)
             </label>
-            <button className="btn btn-gold" style={{ marginTop: 8 }} disabled={busy} onClick={() => run(() => api.updateSettings({ pdvAccount: pdvSettings }), "Ajustes do PDV+ salvos.")}>
+            <Btn className="btn-gold" style={{ marginTop: 8 }} disabled={busy} onClick={() => run(() => api.updateSettings({ pdvAccount: pdvSettings }), "Ajustes do PDV+ salvos.")}>
               Salvar PDV+
-            </button>
+            </Btn>
             <hr className="soft" />
             <label>
               Nome do lojista
@@ -962,9 +1077,9 @@ export default function Admin({ user }) {
                 placeholder="Deixe em branco para não mudar"
               />
             </label>
-            <button className="btn btn-ghost" style={{ marginTop: 12 }} disabled={busy} onClick={() => run(() => api.updateUser(account), "Dados de acesso atualizados.")}>
+            <Btn className="btn-ghost" style={{ marginTop: 12 }} disabled={busy} onClick={() => run(() => api.updateUser(account), "Dados de acesso atualizados.")}>
               Salvar acesso
-            </button>
+            </Btn>
           </div>
         </div>
       ) : null}

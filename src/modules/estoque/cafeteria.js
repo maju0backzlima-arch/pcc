@@ -1,4 +1,5 @@
 import { normalizarMetodo } from "../financeiro/engine.js";
+import { aplicarFornecedor } from "./fornecedores.js";
 
 function roundQty(value) {
   return Math.round((Number(value) || 0) * 1000) / 1000;
@@ -44,8 +45,43 @@ export function normalizeInsumo(item) {
     validade: item.validade || item.expiry || "",
     fornecedor: item.fornecedor || item.supplier || "Sem fornecedor",
     supplier: item.supplier || item.fornecedor || "Sem fornecedor",
+    fornecedorId: item.fornecedorId || "",
     active: item.active !== false
   };
+}
+
+export function aplicarPatchInsumo(item, body = {}, store) {
+  if (body.name != null || body.nome != null) {
+    item.name = String(body.name || body.nome);
+    item.nome = item.name;
+  }
+  if (body.unit != null || body.unidade != null) {
+    item.unit = String(body.unit || body.unidade);
+    item.unidade = item.unit;
+  }
+  if (body.category != null) item.category = String(body.category);
+  if (body.validade != null) item.validade = String(body.validade);
+  if (body.active != null) item.active = Boolean(body.active);
+  const nums = [
+    ["stock", "estoque_atual"],
+    ["minStock", "estoque_minimo"],
+    ["targetStock", "estoque_ideal"],
+    ["costPerUnit", "custo_unitario"]
+  ];
+  for (const [en, pt] of nums) {
+    const raw = body[en] !== undefined && body[en] !== "" ? body[en] : body[pt];
+    if (raw !== undefined && raw !== "") {
+      const value = Number(raw);
+      if (!Number.isNaN(value) && value >= 0) {
+        item[en] = value;
+        item[pt] = value;
+      }
+    }
+  }
+  if (body.fornecedor != null || body.fornecedorId != null || body.supplier != null) {
+    aplicarFornecedor(item, store, body.fornecedorId || body.fornecedor || body.supplier);
+  }
+  return item;
 }
 
 export function tipoProduto(product) {
@@ -84,6 +120,101 @@ export function normalizeProdutoVenda(product) {
     fichaTecnica: ficha,
     recipe: ficha.map((row) => ({ ingredientId: row.insumo_id, qty: row.quantidade_usada }))
   };
+}
+
+export function aplicarPatchProduto(product, body = {}) {
+  if (body.nome != null || body.name != null) {
+    product.nome = String(body.nome || body.name);
+    product.name = product.nome;
+  }
+  if (body.sku != null) product.sku = String(body.sku);
+  if (body.category != null) product.category = String(body.category);
+  if (body.tipo) product.tipo = body.tipo === "revenda" ? "revenda" : "preparo";
+  if (body.ncm != null) product.ncm = String(body.ncm);
+  if (body.cfop != null) product.cfop = String(body.cfop);
+  if (body.csosn != null) product.csosn = String(body.csosn);
+  if (body.active != null) product.active = Boolean(body.active);
+  if (body.preco_custo !== undefined && body.preco_custo !== "") product.preco_custo = Number(body.preco_custo);
+  const priceRaw = body.preco_venda !== undefined && body.preco_venda !== "" ? body.preco_venda : body.price;
+  if (priceRaw !== undefined && priceRaw !== "") {
+    const price = Number(priceRaw);
+    product.preco_venda = price;
+    product.price = price;
+    product.priceOverride = price;
+  }
+  const stockRaw = body.estoque_atual !== undefined && body.estoque_atual !== "" ? body.estoque_atual : body.stock;
+  if (stockRaw !== undefined && stockRaw !== "") {
+    const stock = Number(stockRaw);
+    product.estoque_atual = stock;
+    product.stockOverride = stock;
+  }
+  if (body.estoque_minimo !== undefined && body.estoque_minimo !== "") product.estoque_minimo = Number(body.estoque_minimo);
+  if (body.estoque_ideal !== undefined && body.estoque_ideal !== "") product.estoque_ideal = Number(body.estoque_ideal);
+  if (body.fornecedor != null) product.fornecedor = String(body.fornecedor);
+  if (Array.isArray(body.fichaTecnica) || Array.isArray(body.recipe)) {
+    const ficha = Array.isArray(body.fichaTecnica)
+      ? body.fichaTecnica
+      : body.recipe.map((row) => ({
+          insumo_id: row.ingredientId || row.insumo_id,
+          quantidade_usada: Number(row.qty ?? row.quantidade_usada ?? 0)
+        }));
+    product.fichaTecnica = ficha;
+    product.recipe = ficha.map((row) => ({ ingredientId: row.insumo_id, qty: row.quantidade_usada }));
+  }
+  if (body.clearPrice) product.priceOverride = null;
+  if (body.clearStock) product.stockOverride = null;
+  return product;
+}
+
+export function cloneInsumo(item) {
+  const copy = JSON.parse(JSON.stringify(item));
+  copy.id = uid("ing");
+  const base = String(item.nome || item.name || "Insumo").replace(/ \(Cópia\)$/, "");
+  copy.name = `${base} (Cópia)`;
+  copy.nome = copy.name;
+  copy.active = true;
+  return copy;
+}
+
+export function cloneProduto(product) {
+  const src = normalizeProdutoVenda(product);
+  const copy = JSON.parse(JSON.stringify(src));
+  copy.id = uid("prd");
+  const base = String(src.nome || src.name || "Produto").replace(/ \(Cópia\)$/, "");
+  copy.name = `${base} (Cópia)`;
+  copy.nome = copy.name;
+  copy.sku = `${String(src.sku || "SKU").slice(0, 16)}-C`;
+  copy.origin = "manual";
+  copy.active = true;
+  return copy;
+}
+
+export function vencendoEm(item, days = 3) {
+  const raw = item.validade;
+  if (!raw) return false;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return false;
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const lim = new Date(now);
+  lim.setDate(lim.getDate() + days);
+  return d >= now && d <= lim;
+}
+
+export function waDigits(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+  return digits.length <= 11 ? `55${digits}` : digits;
+}
+
+export function listaWhatsappGrupo(grupo) {
+  const linhas = [`*PIC NIC — pedido ${grupo.fornecedor}*`, `_${new Date().toLocaleString("pt-BR")}_`, ""];
+  for (const item of grupo.itens || []) {
+    linhas.push(`• ${item.quantidade_comprar} ${item.unidade} ${item.nome}`);
+  }
+  linhas.push("");
+  linhas.push(`Total estimado: ${Number(grupo.total || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`);
+  return linhas.join("\n");
 }
 
 export function processarVendaPDV(store, venda = {}) {
@@ -326,6 +457,7 @@ export function gerarListaComprasInsumos(insumos = []) {
         custo_unitario: item.custo_unitario,
         estimado: roundMoney(quantidade_comprar * item.custo_unitario),
         fornecedor: item.fornecedor,
+        fornecedorId: item.fornecedorId || "",
         validade: item.validade
       };
     })

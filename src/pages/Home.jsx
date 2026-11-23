@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
+import { Coffee, Radio, ShoppingCart } from "lucide-react";
 import { api } from "../api.js";
 import { errorMessage } from "../errors.js";
+import { TabBtn } from "../ui/ui.jsx";
 
 function money(value) {
   return (Number(value) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-export default function Home() {
+export default function Home({ search = "" }) {
   const [catalog, setCatalog] = useState(null);
   const [error, setError] = useState("");
   const [cat, setCat] = useState("Todos");
@@ -38,9 +40,12 @@ export default function Home() {
     return list;
   }, [catalog]);
 
-  const products = (catalog?.products || []).filter(
-    (item) => cat === "Todos" || item.category === cat
-  );
+  const products = (catalog?.products || []).filter((item) => {
+    const matchCat = cat === "Todos" || item.category === cat;
+    const q = search.trim().toLowerCase();
+    const matchQ = !q || String(item.name).toLowerCase().includes(q) || String(item.sku || "").toLowerCase().includes(q);
+    return matchCat && matchQ;
+  });
 
   return (
     <main className="page">
@@ -48,34 +53,40 @@ export default function Home() {
         <div>
           <p className="kicker">Balcão · agora</p>
           <h1>O que ainda sai da máquina.</h1>
-          <p>
-            Cada venda no PDV+ desconta a ficha técnica. Se o leite acaba, o cappuccino some daqui.
-          </p>
+          <p>Cada venda no PDV+ desconta a ficha técnica. Se o leite acaba, o cappuccino some daqui.</p>
         </div>
-        <div className="hero-card steam-card">
+        <div className="hero-card">
           <h3>Turno</h3>
-          <p>
-            Olhe o cardápio, chame o pedido e deixe a lista de compras para o estoquista.
-          </p>
+          <p>Olhe o cardápio, chame o pedido e deixe a lista de compras para o estoquista.</p>
         </div>
       </section>
 
-      <section className="banners">
-        <article className="banner wine">
-          <strong>Vendeu no PDV+? Já atualizou.</strong>
-          <span>A venda consome a receita. O item some daqui se o insumo acabar.</span>
+      <section className="bento">
+        <article className="kpi-card">
+          <span className="kpi-icon brown"><Coffee size={16} /></span>
+          <span className="kpi-label">Vendeu no PDV+?</span>
+          <strong className="kpi-value">Ao vivo</strong>
+          <span className="kpi-badge up">Receita baixa agora</span>
         </article>
-        <article className="banner gold">
-          <strong>Faltou alguma coisa?</strong>
-          <span>Abra a central da equipe: a lista de mercado se monta sozinha, com prioridade.</span>
+        <article className="kpi-card">
+          <span className="kpi-icon amber"><ShoppingCart size={16} /></span>
+          <span className="kpi-label">Faltou alguma coisa?</span>
+          <strong className="kpi-value">Lista</strong>
+          <span className="kpi-badge down">Prioridade automática</span>
         </article>
-        <article className="banner">
-          <strong>Preço e estoque reais.</strong>
-          <span>
-            {catalog?.syncedAt
-              ? `Última atualização PDV+: ${new Date(catalog.syncedAt).toLocaleString("pt-BR")}`
-              : "Entre na central para ligar o PDV+ e a lista de mercado."}
+        <article className="kpi-card">
+          <span className="kpi-icon green"><Radio size={16} /></span>
+          <span className="kpi-label">Preço e estoque</span>
+          <strong className="kpi-value">{catalog?.products?.length || 0}</strong>
+          <span className="kpi-badge up">
+            {catalog?.syncedAt ? new Date(catalog.syncedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "Aguardando PDV+"}
           </span>
+        </article>
+        <article className="kpi-card">
+          <span className="kpi-icon blue"><Coffee size={16} /></span>
+          <span className="kpi-label">Disponíveis</span>
+          <strong className="kpi-value">{(catalog?.products || []).filter((p) => p.available > 0).length}</strong>
+          <span className="kpi-badge up">Cardápio ativo</span>
         </article>
       </section>
 
@@ -91,9 +102,9 @@ export default function Home() {
 
       <div className="cats">
         {categories.map((name) => (
-          <button key={name} className={`tab ${cat === name ? "active" : ""}`} onClick={() => setCat(name)}>
+          <TabBtn key={name} active={cat === name} onClick={() => setCat(name)}>
             {name}
-          </button>
+          </TabBtn>
         ))}
       </div>
 

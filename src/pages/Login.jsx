@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, setToken } from "../api.js";
 import { errorMessage } from "../errors.js";
+import { Btn } from "../ui/ui.jsx";
 
 export default function Login({ onLogin }) {
   const [email, setEmail] = useState("");
@@ -32,6 +33,9 @@ export default function Login({ onLogin }) {
 
   return (
     <div className="login-wrap">
+      <span className="login-motif u" />
+      <span className="login-motif b" />
+      <span className="login-motif b2" />
       <form className="login-card" onSubmit={submit}>
         <img src="/logo.webp" alt="PIC NIC" />
         <h1>Entrar</h1>
@@ -52,9 +56,9 @@ export default function Login({ onLogin }) {
           </label>
           {error ? <p className="err">{error}</p> : null}
           {syncNote ? <p className="ok">{syncNote}</p> : null}
-          <button className="btn btn-primary" disabled={busy}>
+          <Btn className="btn-primary" type="submit" disabled={busy}>
             {busy ? "Entrando..." : "Entrar"}
-          </button>
+          </Btn>
         </div>
       </form>
     </div>

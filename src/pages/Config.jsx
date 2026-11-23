@@ -3,11 +3,12 @@ import { Navigate } from "react-router-dom";
 import { api } from "../api.js";
 import { errorMessage } from "../errors.js";
 import { canManageEquipe, ROLES } from "../auth/permissoes.js";
+import { Btn, useToast } from "../ui/ui.jsx";
 
 export default function Config({ user }) {
   const [dash, setDash] = useState({ users: [], settings: {} });
+  const toast = useToast();
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [novo, setNovo] = useState({ name: "", email: "", password: "", role: "operador" });
 
@@ -31,7 +32,7 @@ export default function Config({ user }) {
     try {
       const data = await task();
       setDash(data);
-      if (ok) setMessage(ok);
+      if (ok) toast(ok);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -48,7 +49,6 @@ export default function Config({ user }) {
         </div>
         <p>Cada pessoa entra com e-mail e senha próprios. Papéis limitam o que aparece na central.</p>
       </div>
-      {message ? <p className="ok">{message}</p> : null}
       {error ? <p className="err">{error}</p> : null}
 
       <div className="split">
@@ -63,13 +63,13 @@ export default function Config({ user }) {
                 {ROLES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
               </select>
             </label>
-            <button
-              className="btn btn-primary"
+            <Btn
+              className="btn-primary"
               disabled={busy}
               onClick={() => run(() => api.createColaborador(novo), "Colaborador criado.")}
             >
               Adicionar
-            </button>
+            </Btn>
           </div>
         </div>
         <div className="card">
@@ -84,13 +84,13 @@ export default function Config({ user }) {
                   <td>{ROLES.find((r) => r.id === item.role)?.label || item.role}</td>
                   <td>
                     {item.email !== user.email ? (
-                      <button
-                        className="btn btn-ghost"
+                      <Btn
+                        className="btn-ghost"
                         disabled={busy}
                         onClick={() => run(() => api.updateColaborador(item.id || item.email, { active: item.active === false }), item.active === false ? "Reativado." : "Desativado.")}
                       >
                         {item.active === false ? "Reativar" : "Desativar"}
-                      </button>
+                      </Btn>
                     ) : <span className="muted">você</span>}
                   </td>
                 </tr>

@@ -36,8 +36,17 @@ import {
   registrarPerda,
   parseXmlNfe,
   entradaCompra,
-  gerarListaComprasInsumos
+  gerarListaComprasInsumos,
+  aplicarPatchInsumo,
+  aplicarPatchProduto,
+  cloneInsumo,
+  cloneProduto
 } from "./modules/estoque/cafeteria.js";
+import {
+  defaultFornecedores,
+  aplicarFornecedor,
+  upsertFornecedor
+} from "./modules/estoque/fornecedores.js";
 
 const KEY = "picnic-local-store";
 const USER_KEY = "picnic-local-user";
@@ -93,6 +102,7 @@ function seed() {
     notes: [],
     fechamentos: [],
     notas: [],
+    fornecedores: clone(defaultFornecedores),
     settings: clone(defaultSettings),
     users: clone(users),
     pdvStock: {}
@@ -108,7 +118,6 @@ function hydrate(store) {
     settlementDays: { ...clone(defaultFinanceiro).settlementDays, ...(store.settings.financeiro?.settlementDays || {}) }
   };
   store.products = (store.products || []).map((product) => normalizeProduto(normalizeProdutoVenda(product)));
-  store.ingredients = (store.ingredients || []).map((item) => normalizeInsumo(item));
   store.cashFlow = store.cashFlow || [];
   store.expenses = store.expenses?.length ? store.expenses : defaultExpenses();
   store.receivables = store.receivables || [];
@@ -117,7 +126,13 @@ function hydrate(store) {
   store.notes = store.notes || [];
   store.fechamentos = store.fechamentos || [];
   store.notas = store.notas || [];
+  store.fornecedores = store.fornecedores?.length ? store.fornecedores : clone(defaultFornecedores);
   store.settings.fiscal = { ...defaultFiscal(), ...(store.settings.fiscal || {}) };
+  store.ingredients = (store.ingredients || []).map((item) => {
+    const next = normalizeInsumo(item);
+    aplicarFornecedor(next, store, next.fornecedorId || next.fornecedor || next.supplier);
+    return next;
+  });
   return store;
 }
 
@@ -284,6 +299,7 @@ function snapshot() {
     fechamentos: (store.fechamentos || []).slice(0, 30),
     caixaDia: resumoCaixaDia(store),
     notas: (store.notas || []).slice(0, 80),
+    fornecedores: store.fornecedores || [],
     users: store.users.map((user) => ({ id: user.id, email: user.email, name: user.name, role: user.role, active: user.active !== false }))
   };
 }
@@ -384,24 +400,21 @@ function json(path, options = {}) {
     return snapshot();
   }
 
-  const productMatch = path.match(/^\/api\/admin\/products\/([^/]+)(?:\/(archive))?$/);
+  const productMatch = path.match(/^\/api\/admin\/products\/([^/]+)(?:\/(archive|clone|delete))?$/);
   if (productMatch) {
     const product = store.products.find((item) => item.id === productMatch[1]);
     if (!product) throw new Error("Produto não encontrado.");
-    if (productMatch[2] === "archive" || body.active === false) product.active = false;
-    else {
-      if (body.name != null) product.name = String(body.name);
-      if (body.sku != null) product.sku = String(body.sku);
-      if (body.category != null) product.category = String(body.category);
-      if (body.active != null) product.active = Boolean(body.active);
-      if (Array.isArray(body.recipe)) product.recipe = body.recipe;
-      if (body.price !== undefined && body.price !== "") {
-        product.priceOverride = Number(body.price);
-        product.price = Number(body.price);
-      }
-      if (body.stock !== undefined && body.stock !== "") product.stockOverride = Number(body.stock);
-      if (body.clearPrice) product.priceOverride = null;
-      if (body.clearStock) product.stockOverride = null;
+    if (productMatch[2] === "clone") {
+      const copy = cloneProduto(product);
+      store.products.unshift(copy);
+      rebuild(store);
+      save(store);
+      return { clonedId: copy.id, ...snapshot() };
+    }
+    if (productMatch[2] === "archive" || productMatch[2] === "delete" || body.active === false) {
+      product.active = false;
+    } else {
+      aplicarPatchProduto(product, body);
     }
     rebuild(store);
     save(store);
@@ -409,34 +422,61 @@ function json(path, options = {}) {
   }
 
   if (path === "/api/admin/ingredients" && method === "POST") {
-    store.ingredients.push({
+    const ingredient = {
       id: uid("ing"),
       name: String(body.name || "Novo insumo"),
+      nome: String(body.name || "Novo insumo"),
       unit: String(body.unit || "un"),
+      unidade: String(body.unit || "un"),
       stock: Number(body.stock || 0),
+      estoque_atual: Number(body.stock || 0),
       minStock: Number(body.minStock || 0),
+      estoque_minimo: Number(body.minStock || 0),
       targetStock: Number(body.targetStock || 0) || roundQty(Number(body.minStock || 0) * 2.5),
+      estoque_ideal: Number(body.targetStock || 0) || roundQty(Number(body.minStock || 0) * 2.5),
       costPerUnit: Number(body.costPerUnit || 0),
+      custo_unitario: Number(body.costPerUnit || 0),
       category: String(body.category || "Outros"),
-      supplier: String(body.supplier || ""),
+      supplier: String(body.supplier || body.fornecedor || ""),
+      fornecedor: String(body.fornecedor || body.supplier || ""),
+      fornecedorId: "",
       active: true
-    });
+    };
+    aplicarFornecedor(ingredient, store, body.fornecedorId || body.fornecedor || body.supplier);
+    store.ingredients.push(ingredient);
     rebuild(store);
     save(store);
     return snapshot();
   }
 
-  const ingMatch = path.match(/^\/api\/admin\/ingredients\/([^/]+)$/);
+  const ingMatch = path.match(/^\/api\/admin\/ingredients\/([^/]+)(?:\/(clone|delete))?$/);
   if (ingMatch) {
     const ingredient = store.ingredients.find((item) => item.id === ingMatch[1]);
     if (!ingredient) throw new Error("Insumo não encontrado.");
-    for (const field of ["name", "unit", "category", "supplier"]) {
-      if (body[field] != null) ingredient[field] = String(body[field]);
+    if (ingMatch[2] === "clone") {
+      const copy = cloneInsumo(ingredient);
+      store.ingredients.unshift(copy);
+      rebuild(store);
+      save(store);
+      return { clonedId: copy.id, ...snapshot() };
     }
-    for (const field of ["stock", "minStock", "targetStock", "costPerUnit"]) {
-      if (body[field] !== undefined && body[field] !== "") ingredient[field] = Number(body[field]);
-    }
+    if (ingMatch[2] === "delete") ingredient.active = false;
+    else aplicarPatchInsumo(ingredient, body, store);
     rebuild(store);
+    save(store);
+    return snapshot();
+  }
+
+  if (path === "/api/admin/fornecedores" && method === "POST") {
+    upsertFornecedor(store, body);
+    save(store);
+    return snapshot();
+  }
+
+  const fornMatch = path.match(/^\/api\/admin\/fornecedores\/([^/]+)$/);
+  if (fornMatch && method === "PATCH") {
+    const item = upsertFornecedor(store, body, fornMatch[1]);
+    if (!item) throw new Error("Fornecedor não encontrado.");
     save(store);
     return snapshot();
   }
@@ -553,24 +593,7 @@ function json(path, options = {}) {
   if (estqMatch && method === "PATCH") {
     const product = store.products.find((item) => item.id === estqMatch[1]);
     if (!product) throw new Error("Produto não encontrado.");
-    if (body.nome != null || body.name != null) {
-      product.nome = String(body.nome || body.name);
-      product.name = product.nome;
-    }
-    if (body.sku != null) product.sku = String(body.sku);
-    if (body.preco_custo !== undefined && body.preco_custo !== "") product.preco_custo = Number(body.preco_custo);
-    if (body.preco_venda !== undefined && body.preco_venda !== "") {
-      product.preco_venda = Number(body.preco_venda);
-      product.price = product.preco_venda;
-      product.priceOverride = product.preco_venda;
-    }
-    if (body.estoque_atual !== undefined && body.estoque_atual !== "") {
-      product.estoque_atual = Number(body.estoque_atual);
-      product.stockOverride = product.estoque_atual;
-    }
-    if (body.estoque_minimo !== undefined && body.estoque_minimo !== "") product.estoque_minimo = Number(body.estoque_minimo);
-    if (body.estoque_ideal !== undefined && body.estoque_ideal !== "") product.estoque_ideal = Number(body.estoque_ideal);
-    if (body.fornecedor != null) product.fornecedor = String(body.fornecedor);
+    aplicarPatchProduto(product, body);
     rebuild(store);
     save(store);
     return snapshot();
@@ -668,12 +691,20 @@ function json(path, options = {}) {
     return { receivable: item, ...snapshot() };
   }
 
-  const recMatch = path.match(/^\/api\/financeiro\/receber\/([^/]+)\/quitar$/);
-  if (recMatch && method === "POST") {
-    const item = receberConta(store, recMatch[1]);
-    if (!item) throw new Error("Conta não encontrada.");
-    save(store);
-    return { receivable: item, ...snapshot() };
+  const recMatch = path.match(/^\/api\/financeiro\/receber\/([^/]+)(?:\/(quitar))?$/);
+  if (recMatch) {
+    if (recMatch[2] === "quitar") {
+      const item = receberConta(store, recMatch[1]);
+      if (!item) throw new Error("Conta não encontrada.");
+      save(store);
+      return { receivable: item, ...snapshot() };
+    }
+    if (method === "PATCH") {
+      const item = upsertReceivable(store, body, recMatch[1]);
+      if (!item) throw new Error("Conta não encontrada.");
+      save(store);
+      return { receivable: item, ...snapshot() };
+    }
   }
 
   if ((path === "/api/financeiro/caixa-dia" || String(fullPath).startsWith("/api/financeiro/caixa-dia")) && method === "GET") {

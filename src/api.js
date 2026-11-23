@@ -28,7 +28,7 @@ function looksLikeHtml(text, res) {
 }
 
 function ourApi(data) {
-  return data && (Array.isArray(data.products) || data.token || data.user || data.ok || data.sync || data.shoppingList || data.dre || data.listaCompras || data.cashFlow || data.expenses || data.notas || data.files);
+  return data && (Array.isArray(data.products) || data.token || data.user || data.ok || data.sync || data.shoppingList || data.dre || data.listaCompras || data.cashFlow || data.expenses || data.notas || data.files || data.fornecedores);
 }
 
 let mode = staticHost() ? "local" : "auto";
@@ -89,10 +89,14 @@ export const api = {
   updateProduct: (id, payload) =>
     request(`/api/admin/products/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   archiveProduct: (id) => request(`/api/admin/products/${id}/archive`, { method: "POST" }),
+  cloneProduct: (id) => request(`/api/admin/products/${id}/clone`, { method: "POST" }),
+  deleteProduct: (id) => request(`/api/admin/products/${id}/delete`, { method: "POST" }),
   createIngredient: (payload) =>
     request("/api/admin/ingredients", { method: "POST", body: JSON.stringify(payload) }),
   updateIngredient: (id, payload) =>
     request(`/api/admin/ingredients/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  cloneIngredient: (id) => request(`/api/admin/ingredients/${id}/clone`, { method: "POST" }),
+  deleteIngredient: (id) => request(`/api/admin/ingredients/${id}/delete`, { method: "POST" }),
   updateSettings: (payload) =>
     request("/api/admin/settings", { method: "PATCH", body: JSON.stringify(payload) }),
   updateUser: (payload) =>
@@ -136,6 +140,8 @@ export const api = {
     request("/api/financeiro/caixa", { method: "POST", body: JSON.stringify(payload) }),
   createReceber: (payload) =>
     request("/api/financeiro/receber", { method: "POST", body: JSON.stringify(payload) }),
+  updateReceber: (id, payload) =>
+    request(`/api/financeiro/receber/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   quitarReceber: (id) => request(`/api/financeiro/receber/${id}/quitar`, { method: "POST" }),
   caixaDia: (date) => {
     const q = date ? `?date=${encodeURIComponent(date)}` : "";
@@ -163,5 +169,9 @@ export const api = {
   xmlsMes: (month) => {
     const q = month ? `?month=${encodeURIComponent(month)}` : "";
     return request(`/api/fiscal/xmls${q}`);
-  }
+  },
+  createFornecedor: (payload) =>
+    request("/api/admin/fornecedores", { method: "POST", body: JSON.stringify(payload) }),
+  updateFornecedor: (id, payload) =>
+    request(`/api/admin/fornecedores/${id}`, { method: "PATCH", body: JSON.stringify(payload) })
 };

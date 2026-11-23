@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
+import { Banknote, Percent, Receipt, TriangleAlert, TrendingUp, Wallet } from "lucide-react";
 import { api } from "../api.js";
 import { errorMessage } from "../errors.js";
 import { CATEGORIAS, CMV_ALERTA, METODO_LABEL, METODOS, SETTLEMENT_DAYS } from "../modules/financeiro/engine.js";
 import { canSeeDre } from "../auth/permissoes.js";
+import { Btn, Count, InlineCell, QuickSelect, TabBtn, useToast } from "../ui/ui.jsx";
 
 function money(v) {
   return (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -25,7 +27,6 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-const STATUS = { pago: "Pago", pendente: "Pendente", atrasado: "Atrasado" };
 const TABS = [
   { id: "dre", label: "DRE" },
   { id: "caixa", label: "Caixa" },
@@ -35,7 +36,7 @@ const TABS = [
   { id: "taxas", label: "Taxas" }
 ];
 
-export default function Financeiro({ user }) {
+export default function Financeiro({ user, search = "" }) {
   const range = monthRange();
   const [dash, setDash] = useState({
     dre: {},
@@ -49,9 +50,9 @@ export default function Financeiro({ user }) {
   const [from, setFrom] = useState(range.from);
   const [to, setTo] = useState(range.to);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const gerente = canSeeDre(user);
+  const toast = useToast();
   const [tab, setTab] = useState(gerente ? "dre" : "caixa");
   const [taxas, setTaxas] = useState({ pix: 0, credito: 3.49, debito: 1.99, voucher: 0, dinheiro: 0 });
   const [imposto, setImposto] = useState(6);
@@ -108,7 +109,7 @@ export default function Financeiro({ user }) {
     try {
       const data = await task();
       apply(data);
-      if (ok) setMessage(ok);
+      if (ok) toast(ok);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -143,7 +144,6 @@ export default function Financeiro({ user }) {
         <p>Caixa, conciliação PDV+, conferência de gaveta e DRE do mês.</p>
       </div>
 
-      {message ? <p className="ok">{message}</p> : null}
       {error ? <p className="err">{error}</p> : null}
 
       <div className="card" style={{ marginBottom: 16 }}>
@@ -154,30 +154,109 @@ export default function Financeiro({ user }) {
       </div>
 
       {gerente ? (
-      <div className="dre-grid">
-        <article className="banner wine"><strong>{money(dre.faturamentoBruto)}</strong><span>Faturamento bruto</span></article>
-        <article className="banner gold"><strong>{money(dre.impostoDas ?? dre.impostos)}</strong><span>DAS</span></article>
-        <article className="banner"><strong>{money(dre.taxasCartao ?? dre.taxas)}</strong><span>Taxas cartão/voucher</span></article>
-        <article className={`banner ${cmvAlto ? "wine" : ""}`}>
-          <strong>{money(dre.cmv)}</strong>
-          <span>CMV {cmvPct.toFixed(1)}%{cmvAlto ? ` · acima de ${CMV_ALERTA}%` : ""}</span>
+      <>
+      <div className="bento">
+        <article className="kpi-card">
+          <span className="kpi-icon brown"><Wallet size={16} /></span>
+          <span className="kpi-label">Faturamento bruto</span>
+          <strong className="kpi-value"><Count value={dre.faturamentoBruto} money /></strong>
+          <span className="kpi-badge up">{dre.vendas || 0} vendas</span>
         </article>
-        <article className="banner"><strong>{money(dre.lucroBruto)}</strong><span>Lucro bruto</span></article>
-        <article className="banner wine"><strong>{money(dre.lucroLiquido)}</strong><span>Lucro líquido</span></article>
+        <article className="kpi-card">
+          <span className="kpi-icon amber"><Percent size={16} /></span>
+          <span className="kpi-label">DAS</span>
+          <strong className="kpi-value"><Count value={dre.impostoDas ?? dre.impostos} money /></strong>
+          <span className="kpi-badge up">{dre.impostoPercent || 6}%</span>
+        </article>
+        <article className="kpi-card">
+          <span className={`kpi-icon ${cmvAlto ? "red" : "green"}`}><TriangleAlert size={16} /></span>
+          <span className="kpi-label">CMV</span>
+          <strong className="kpi-value"><Count value={dre.cmv} money /></strong>
+          <span className={`kpi-badge ${cmvAlto ? "down" : "up"}`}>{cmvPct.toFixed(1)}%{cmvAlto ? ` · >${CMV_ALERTA}%` : ""}</span>
+        </article>
+        <article className="kpi-card">
+          <span className="kpi-icon green"><TrendingUp size={16} /></span>
+          <span className="kpi-label">Lucro líquido</span>
+          <strong className="kpi-value"><Count value={dre.lucroLiquido} money /></strong>
+          <span className="kpi-badge up">Após DAS e CMV</span>
+        </article>
       </div>
+      <div className="bento-main">
+        <div className="card">
+          <h3>DRE do mês</h3>
+          <div className="dre-bar">
+            {[
+              ["Bruto", dre.faturamentoBruto, dre.faturamentoBruto],
+              ["DAS", dre.impostoDas ?? dre.impostos, dre.faturamentoBruto],
+              ["Taxas", dre.taxasCartao ?? dre.taxas, dre.faturamentoBruto],
+              ["CMV", dre.cmv, dre.faturamentoBruto],
+              ["Líquido", dre.lucroLiquido, dre.faturamentoBruto]
+            ].map(([label, value, base]) => (
+              <div className="bar-row" key={label}>
+                <span>{label}</span>
+                <i><span style={{ width: `${base ? Math.min(100, (Number(value || 0) / Number(base)) * 100) : 0}%` }} /></i>
+                <span className="tabular">{money(value)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="card">
+          <h3>Alertas de estoque / CMV</h3>
+          <ul className="alert-list">
+            <li className="alert-item">
+              <b>CMV {cmvPct.toFixed(1)}%</b>
+              <span className={cmvAlto ? "err" : "ok"}>{cmvAlto ? "Acima do alerta" : "Dentro da meta"}</span>
+            </li>
+            <li className="alert-item">
+              <b>Taxas cartão</b>
+              <span className="tabular">{money(dre.taxasCartao ?? dre.taxas)}</span>
+            </li>
+            <li className="alert-item">
+              <b>Perdas</b>
+              <span className="tabular">{money(dre.perdas)}</span>
+            </li>
+            <li className="alert-item">
+              <b>A receber</b>
+              <span className="tabular">{money(dre.aReceber)}</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+      </>
       ) : (
-      <div className="dre-grid">
-        <article className="banner wine"><strong>{money(caixaDia.sistema)}</strong><span>Vendas do sistema</span></article>
-        <article className="banner"><strong>{caixaDia.vendas || 0}</strong><span>Cupons</span></article>
-        <article className="banner gold"><strong>{money(caixaDia.fundoCaixa)}</strong><span>Fundo de caixa</span></article>
+      <div className="bento">
+        <article className="kpi-card">
+          <span className="kpi-icon brown"><Banknote size={16} /></span>
+          <span className="kpi-label">Vendas do sistema</span>
+          <strong className="kpi-value"><Count value={caixaDia.sistema} money /></strong>
+          <span className="kpi-badge up">Turno</span>
+        </article>
+        <article className="kpi-card">
+          <span className="kpi-icon amber"><Receipt size={16} /></span>
+          <span className="kpi-label">Cupons</span>
+          <strong className="kpi-value"><Count value={caixaDia.vendas || 0} /></strong>
+          <span className="kpi-badge up">PDV+</span>
+        </article>
+        <article className="kpi-card">
+          <span className="kpi-icon green"><Wallet size={16} /></span>
+          <span className="kpi-label">Fundo de caixa</span>
+          <strong className="kpi-value"><Count value={caixaDia.fundoCaixa} money /></strong>
+          <span className="kpi-badge up">Gaveta</span>
+        </article>
+        <article className="kpi-card">
+          <span className="kpi-icon blue"><TrendingUp size={16} /></span>
+          <span className="kpi-label">Líquido do dia</span>
+          <strong className="kpi-value"><Count value={caixaDia.sistema} money /></strong>
+          <span className="kpi-badge up">Conferência</span>
+        </article>
       </div>
       )}
 
       <div className="cats">
         {TABS.filter((item) => gerente || !["dre", "taxas", "contas", "receber"].includes(item.id)).map((item) => (
-          <button key={item.id} className={`tab ${tab === item.id ? "active" : ""}`} onClick={() => setTab(item.id)}>
+          <TabBtn key={item.id} active={tab === item.id} onClick={() => setTab(item.id)}>
             {item.label}
-          </button>
+          </TabBtn>
         ))}
       </div>
 
@@ -256,7 +335,7 @@ export default function Financeiro({ user }) {
                 </label>
                 <label>Valor<input type="number" min="0" step="0.01" value={manual.amount} onChange={(e) => setManual({ ...manual, amount: e.target.value })} /></label>
                 <label>Descrição<input value={manual.note} onChange={(e) => setManual({ ...manual, note: e.target.value })} /></label>
-                <button className="btn btn-primary" disabled={busy} onClick={() => run(() => api.lancarCaixa(manual), "Lançamento gravado.")}>Lançar</button>
+                <Btn className="btn-primary" disabled={busy} onClick={() => run(() => api.lancarCaixa(manual), "Lançamento gravado.")}>Lançar</Btn>
               </div>
             </div>
             <div className="card">
@@ -270,7 +349,7 @@ export default function Financeiro({ user }) {
                 </label>
                 <label>Valor<input type="number" min="0" step="0.01" value={caixa.amount} onChange={(e) => setCaixa({ ...caixa, amount: e.target.value })} /></label>
                 <label>Motivo<input value={caixa.note} onChange={(e) => setCaixa({ ...caixa, note: e.target.value })} /></label>
-                <button className="btn btn-gold" disabled={busy} onClick={() => run(() => api.sangria(caixa), "Caixa atualizado.")}>Confirmar</button>
+                <Btn className="btn-gold" disabled={busy} onClick={() => run(() => api.sangria(caixa), "Caixa atualizado.")}>Confirmar</Btn>
               </div>
             </div>
           </div>
@@ -332,14 +411,14 @@ export default function Financeiro({ user }) {
                   })}
                 </tbody>
               </table>
-              <button
-                className="btn btn-primary"
+              <Btn
+                className="btn-primary"
                 style={{ marginTop: 12 }}
                 disabled={busy}
                 onClick={() => run(() => api.conferirCaixa({ date: confDate, gaveta, operador: user?.email }), "Conferência gravada.")}
               >
                 Fechar conferência
-              </button>
+              </Btn>
             </div>
             <div className="card">
               <h3>Últimos fechamentos</h3>
@@ -381,23 +460,41 @@ export default function Financeiro({ user }) {
               <label>Valor<input type="number" min="0" step="0.01" value={nova.amount} onChange={(e) => setNova({ ...nova, amount: e.target.value })} /></label>
               <label>Vencimento<input type="date" value={nova.dueDate} onChange={(e) => setNova({ ...nova, dueDate: e.target.value })} /></label>
             </div>
-            <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={busy} onClick={() => run(() => api.createDespesa(nova), "Despesa lançada.")}>Lançar</button>
+            <Btn className="btn-primary" style={{ marginTop: 12 }} disabled={busy} onClick={() => run(() => api.createDespesa(nova), "Despesa lançada.")}>Lançar</Btn>
           </div>
           <div className="card">
             <table className="admin-table">
               <thead><tr><th>Nome</th><th>Categoria</th><th>Tipo</th><th>Valor</th><th>Venc.</th><th>Status</th><th></th></tr></thead>
               <tbody>
-                {(dash.expenses || []).map((item) => (
+                {(dash.expenses || []).filter((item) => !search.trim() || String(item.name).toLowerCase().includes(search.trim().toLowerCase())).map((item) => (
                   <tr key={item.id}>
-                    <td>{item.name}</td>
-                    <td>{item.category || "—"}</td>
-                    <td>{item.type === "fixa" ? "Fixa" : "Variável"}</td>
-                    <td>{money(item.amount)}</td>
-                    <td>{item.dueDate}</td>
-                    <td><span className={`prio ${item.status === "atrasado" ? "urgente" : item.status === "pago" ? "planejado" : "atencao"}`}>{STATUS[item.status]}</span></td>
+                    <td><InlineCell value={item.name} onSave={(v) => run(() => api.updateDespesa(item.id, { name: v }), "Salvo")} /></td>
                     <td>
-                      {item.status !== "pago" ? <button className="btn btn-gold" disabled={busy} onClick={() => run(() => api.pagarDespesa(item.id), "Paga.")}>Pagar</button> : null}
-                      <button className="btn btn-ghost" disabled={busy} onClick={() => run(() => api.removeDespesa(item.id), "Removida.")}>Tirar</button>
+                      <QuickSelect
+                        value={item.category || "Fornecedores"}
+                        options={CATEGORIAS.map((cat) => ({ value: cat, label: cat }))}
+                        onSave={(v) => run(() => api.updateDespesa(item.id, { category: v }), "Salvo")}
+                      />
+                    </td>
+                    <td>
+                      <QuickSelect
+                        value={item.type || "variavel"}
+                        options={[{ value: "fixa", label: "Fixa" }, { value: "variavel", label: "Variável" }]}
+                        onSave={(v) => run(() => api.updateDespesa(item.id, { type: v }), "Salvo")}
+                      />
+                    </td>
+                    <td><InlineCell type="number" step="0.01" value={item.amount} format={(v) => money(v)} onSave={(v) => run(() => api.updateDespesa(item.id, { amount: v }), "Salvo")} /></td>
+                    <td><InlineCell type="date" value={item.dueDate || ""} format={(v) => v || "—"} onSave={(v) => run(() => api.updateDespesa(item.id, { dueDate: v }), "Salvo")} /></td>
+                    <td>
+                      <QuickSelect
+                        value={item.status || "pendente"}
+                        options={[{ value: "pendente", label: "Pendente" }, { value: "pago", label: "Pago" }, { value: "atrasado", label: "Atrasado" }]}
+                        onSave={(v) => run(() => api.updateDespesa(item.id, { status: v }), "Salvo")}
+                      />
+                    </td>
+                    <td>
+                      {item.status !== "pago" ? <Btn className="btn-gold" disabled={busy} onClick={() => run(() => api.pagarDespesa(item.id), "Paga.")}>Pagar</Btn> : null}
+                      <Btn className="btn-ghost" disabled={busy} onClick={() => run(() => api.removeDespesa(item.id), "Removida.")}>Tirar</Btn>
                     </td>
                   </tr>
                 ))}
@@ -416,20 +513,26 @@ export default function Financeiro({ user }) {
               <label>Valor<input type="number" min="0" step="0.01" value={receber.amount} onChange={(e) => setReceber({ ...receber, amount: e.target.value })} /></label>
               <label>Vencimento<input type="date" value={receber.dueDate} onChange={(e) => setReceber({ ...receber, dueDate: e.target.value })} /></label>
             </div>
-            <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={busy} onClick={() => run(() => api.createReceber(receber), "A receber lançado.")}>Lançar</button>
+            <Btn className="btn-primary" style={{ marginTop: 12 }} disabled={busy} onClick={() => run(() => api.createReceber(receber), "A receber lançado.")}>Lançar</Btn>
           </div>
           <div className="card">
             <table className="admin-table">
               <thead><tr><th>Nome</th><th>Valor</th><th>Venc.</th><th>Status</th><th></th></tr></thead>
               <tbody>
-                {(dash.receivables || []).map((item) => (
+                {(dash.receivables || []).filter((item) => !search.trim() || String(item.name).toLowerCase().includes(search.trim().toLowerCase())).map((item) => (
                   <tr key={item.id}>
-                    <td>{item.name}</td>
-                    <td>{money(item.amount)}</td>
-                    <td>{item.dueDate}</td>
-                    <td>{STATUS[item.status] || item.status}</td>
+                    <td><InlineCell value={item.name} onSave={(v) => run(() => api.updateReceber(item.id, { name: v }), "Salvo")} /></td>
+                    <td><InlineCell type="number" step="0.01" value={item.amount} format={(v) => money(v)} onSave={(v) => run(() => api.updateReceber(item.id, { amount: v }), "Salvo")} /></td>
+                    <td><InlineCell type="date" value={item.dueDate || ""} format={(v) => v || "—"} onSave={(v) => run(() => api.updateReceber(item.id, { dueDate: v }), "Salvo")} /></td>
                     <td>
-                      {item.status !== "pago" ? <button className="btn btn-gold" disabled={busy} onClick={() => run(() => api.quitarReceber(item.id), "Recebido.")}>Quitar</button> : null}
+                      <QuickSelect
+                        value={item.status || "pendente"}
+                        options={[{ value: "pendente", label: "Pendente" }, { value: "pago", label: "Pago" }, { value: "atrasado", label: "Atrasado" }]}
+                        onSave={(v) => run(() => api.updateReceber(item.id, { status: v }), "Salvo")}
+                      />
+                    </td>
+                    <td>
+                      {item.status !== "pago" ? <Btn className="btn-gold" disabled={busy} onClick={() => run(() => api.quitarReceber(item.id), "Recebido.")}>Quitar</Btn> : null}
                     </td>
                   </tr>
                 ))}
@@ -453,7 +556,7 @@ export default function Financeiro({ user }) {
             </label>
           </div>
           <p className="muted" style={{ marginTop: 8 }}>Pix/débito/voucher D+1 · crédito D+30 · dinheiro na hora.</p>
-          <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={busy} onClick={() => run(() => api.updateTaxas({ taxas, impostoPercent: Number(imposto) }), "Taxas salvas.")}>Salvar</button>
+          <Btn className="btn-primary" style={{ marginTop: 12 }} disabled={busy} onClick={() => run(() => api.updateTaxas({ taxas, impostoPercent: Number(imposto) }), "Taxas salvas.")}>Salvar</Btn>
         </div>
       ) : null}
     </main>

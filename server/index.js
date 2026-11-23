@@ -32,8 +32,11 @@ import {
   emitirNota,
   cancelarNota,
   inutilizarFaixa,
-  xmlsDoMes
+  xmlsDoMes,
+  upsertFornecedor,
+  aplicarFornecedor
 } from "./store.js";
+import { aplicarPatchInsumo, aplicarPatchProduto, cloneInsumo, cloneProduto } from "../src/modules/estoque/cafeteria.js";
 import { simulatePdvCatalog, applyPdvSync, simulatePdvSale } from "./pdv.js";
 import { normalizarVenda } from "../src/services/pdvPlus.js";
 
@@ -106,6 +109,7 @@ function snapshot() {
     fechamentos: (store.fechamentos || []).slice(0, 30),
     caixaDia: resumoCaixaDia(store),
     notas: (store.notas || []).slice(0, 80),
+    fornecedores: store.fornecedores || [],
     users: store.users.map((user) => ({
       id: user.id,
       email: user.email,
@@ -287,31 +291,32 @@ async function start() {
     const store = loadStore();
     const product = store.products.find((item) => item.id === req.params.id);
     if (!product) return res.status(404).json({ error: "Produto não encontrado." });
-
-    if (req.body.name != null) product.name = String(req.body.name).trim() || product.name;
-    if (req.body.sku != null) product.sku = String(req.body.sku).trim() || product.sku;
-    if (req.body.category != null) product.category = String(req.body.category);
-    if (req.body.active != null) product.active = Boolean(req.body.active);
-    if (Array.isArray(req.body.recipe)) product.recipe = req.body.recipe;
-    if (req.body.price !== undefined && req.body.price !== "") {
-      const price = Number(req.body.price);
-      if (Number.isNaN(price) || price < 0) {
-        return res.status(400).json({ error: "Preço inválido." });
-      }
-      product.priceOverride = price;
-      product.price = price;
-    }
-    if (req.body.stock !== undefined && req.body.stock !== "") {
-      const stock = Number(req.body.stock);
-      if (Number.isNaN(stock) || stock < 0) {
-        return res.status(400).json({ error: "Estoque inválido." });
-      }
-      product.stockOverride = stock;
-    }
-    if (req.body.clearPrice) product.priceOverride = null;
-    if (req.body.clearStock) product.stockOverride = null;
+    aplicarPatchProduto(product, req.body || {});
     rebuildPdvStock(store);
     rebuildShoppingList(store);
+    saveStore(store);
+    broadcast("products");
+    res.json(snapshot());
+  });
+
+  app.post("/api/admin/products/:id/clone", requireAdmin, (req, res) => {
+    const store = loadStore();
+    const product = store.products.find((item) => item.id === req.params.id);
+    if (!product) return res.status(404).json({ error: "Produto não encontrado." });
+    const copy = cloneProduto(product);
+    store.products.unshift(copy);
+    rebuildPdvStock(store);
+    rebuildShoppingList(store);
+    saveStore(store);
+    broadcast("products");
+    res.json({ clonedId: copy.id, ...snapshot() });
+  });
+
+  app.post("/api/admin/products/:id/delete", requireAdmin, (req, res) => {
+    const store = loadStore();
+    const product = store.products.find((item) => item.id === req.params.id);
+    if (!product) return res.status(404).json({ error: "Produto não encontrado." });
+    product.active = false;
     saveStore(store);
     broadcast("products");
     res.json(snapshot());
@@ -336,18 +341,28 @@ async function start() {
     const body = req.body || {};
     const name = String(body.name || "").trim();
     if (!name) return res.status(400).json({ error: "Informe o nome do insumo." });
-    store.ingredients.push({
+    const ingredient = {
       id: uid("ing"),
       name,
+      nome: name,
       unit: String(body.unit || "un"),
+      unidade: String(body.unit || "un"),
       stock: Number(body.stock || 0),
+      estoque_atual: Number(body.stock || 0),
       minStock: Number(body.minStock || 0),
+      estoque_minimo: Number(body.minStock || 0),
       targetStock: Number(body.targetStock || 0) || roundQty(Number(body.minStock || 0) * 2.5),
+      estoque_ideal: Number(body.targetStock || 0) || roundQty(Number(body.minStock || 0) * 2.5),
       costPerUnit: Number(body.costPerUnit || 0),
+      custo_unitario: Number(body.costPerUnit || 0),
       category: String(body.category || "Outros"),
-      supplier: String(body.supplier || ""),
+      supplier: String(body.supplier || body.fornecedor || ""),
+      fornecedor: String(body.fornecedor || body.supplier || ""),
+      fornecedorId: "",
       active: body.active !== false
-    });
+    };
+    aplicarFornecedor(ingredient, store, body.fornecedorId || body.fornecedor || body.supplier);
+    store.ingredients.push(ingredient);
     rebuildPdvStock(store);
     rebuildShoppingList(store);
     saveStore(store);
@@ -359,20 +374,32 @@ async function start() {
     const store = loadStore();
     const ingredient = store.ingredients.find((item) => item.id === req.params.id);
     if (!ingredient) return res.status(404).json({ error: "Insumo não encontrado." });
-    const fields = ["name", "unit", "category", "supplier"];
-    for (const field of fields) {
-      if (req.body[field] != null) ingredient[field] = String(req.body[field]);
-    }
-    for (const field of ["stock", "minStock", "targetStock", "costPerUnit"]) {
-      if (req.body[field] !== undefined && req.body[field] !== "") {
-        const value = Number(req.body[field]);
-        if (Number.isNaN(value) || value < 0) {
-          return res.status(400).json({ error: `Valor inválido em ${field}.` });
-        }
-        ingredient[field] = value;
-      }
-    }
-    if (req.body.active != null) ingredient.active = Boolean(req.body.active);
+    aplicarPatchInsumo(ingredient, req.body || {}, store);
+    rebuildPdvStock(store);
+    rebuildShoppingList(store);
+    saveStore(store);
+    broadcast("ingredients");
+    res.json(snapshot());
+  });
+
+  app.post("/api/admin/ingredients/:id/clone", requireAdmin, (req, res) => {
+    const store = loadStore();
+    const ingredient = store.ingredients.find((item) => item.id === req.params.id);
+    if (!ingredient) return res.status(404).json({ error: "Insumo não encontrado." });
+    const copy = cloneInsumo(ingredient);
+    store.ingredients.unshift(copy);
+    rebuildPdvStock(store);
+    rebuildShoppingList(store);
+    saveStore(store);
+    broadcast("ingredients");
+    res.json({ clonedId: copy.id, ...snapshot() });
+  });
+
+  app.post("/api/admin/ingredients/:id/delete", requireAdmin, (req, res) => {
+    const store = loadStore();
+    const ingredient = store.ingredients.find((item) => item.id === req.params.id);
+    if (!ingredient) return res.status(404).json({ error: "Insumo não encontrado." });
+    ingredient.active = false;
     rebuildPdvStock(store);
     rebuildShoppingList(store);
     saveStore(store);
@@ -553,7 +580,7 @@ async function start() {
     }
     if (body.estoque_minimo !== undefined && body.estoque_minimo !== "") product.estoque_minimo = Number(body.estoque_minimo);
     if (body.estoque_ideal !== undefined && body.estoque_ideal !== "") product.estoque_ideal = Number(body.estoque_ideal);
-    if (body.fornecedor != null) product.fornecedor = String(body.fornecedor);
+    aplicarPatchProduto(product, body);
     rebuildPdvStock(store);
     rebuildShoppingList(store);
     saveStore(store);
@@ -645,6 +672,15 @@ async function start() {
     saveStore(store);
     broadcast("settings");
     res.json({ entry: row, ...snapshot() });
+  });
+
+  app.patch("/api/financeiro/receber/:id", requireAdmin, (req, res) => {
+    const store = loadStore();
+    const item = upsertReceivable(store, req.body || {}, req.params.id);
+    if (!item) return res.status(404).json({ error: "Conta não encontrada." });
+    saveStore(store);
+    broadcast("settings");
+    res.json({ receivable: item, ...snapshot() });
   });
 
   app.post("/api/financeiro/receber", requireAdmin, (req, res) => {
@@ -773,6 +809,23 @@ async function start() {
     });
     saveStore(store);
     res.json(snapshot());
+  });
+
+  app.post("/api/admin/fornecedores", requireAdmin, (req, res) => {
+    const store = loadStore();
+    const item = upsertFornecedor(store, req.body || {});
+    saveStore(store);
+    broadcast("ingredients");
+    res.json({ item, ...snapshot() });
+  });
+
+  app.patch("/api/admin/fornecedores/:id", requireAdmin, (req, res) => {
+    const store = loadStore();
+    const item = upsertFornecedor(store, req.body || {}, req.params.id);
+    if (!item) return res.status(404).json({ error: "Fornecedor não encontrado." });
+    saveStore(store);
+    broadcast("ingredients");
+    res.json({ item, ...snapshot() });
   });
 
   app.patch("/api/config/colaboradores/:id", requireAdmin, (req, res) => {

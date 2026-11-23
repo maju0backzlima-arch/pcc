@@ -5,6 +5,7 @@ import { errorMessage } from "../errors.js";
 import { canCancelFiscal } from "../auth/permissoes.js";
 import { STATUS_NOTA } from "../modules/fiscal/engine.js";
 import { downloadBlob, zipFiles } from "../modules/fiscal/zip.js";
+import { Btn, useToast } from "../ui/ui.jsx";
 
 function money(v) {
   return (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -18,8 +19,8 @@ function monthNow() {
 
 export default function Fiscal({ user }) {
   const [dash, setDash] = useState({ notas: [], sales: [] });
+  const toast = useToast();
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [cpf, setCpf] = useState("");
   const [vendaId, setVendaId] = useState("");
@@ -50,7 +51,7 @@ export default function Fiscal({ user }) {
     try {
       const data = await task();
       if (data?.notas || data?.sales) apply(data);
-      if (ok) setMessage(ok);
+      if (ok) toast(ok);
       return data;
     } catch (err) {
       setError(errorMessage(err));
@@ -89,7 +90,7 @@ export default function Fiscal({ user }) {
         return;
       }
       downloadBlob(`nfce-${month}.zip`, zipFiles(files), "application/zip");
-      setMessage("ZIP do mês gerado.");
+      toast("ZIP do mês gerado.");
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -107,7 +108,6 @@ export default function Fiscal({ user }) {
         <p>Emissão com NCM, CFOP e CSOSN 102/500. Cancelamento estorna caixa e estoque.</p>
       </div>
 
-      {message ? <p className="ok">{message}</p> : null}
       {error ? <p className="err">{error}</p> : null}
 
       <div className="split" style={{ marginBottom: 16 }}>
@@ -127,13 +127,13 @@ export default function Fiscal({ user }) {
             <label>CPF no cupom (opcional)
               <input value={cpf} onChange={(e) => setCpf(e.target.value)} placeholder="Somente números" />
             </label>
-            <button
-              className="btn btn-primary"
+            <Btn
+              className="btn-primary"
               disabled={busy || !vendaId}
               onClick={() => run(() => api.emitirNfce({ vendaId, cpf }), "NFC-e autorizada.")}
             >
               Emitir
-            </button>
+            </Btn>
           </div>
         </div>
         <div className="card">
@@ -142,9 +142,9 @@ export default function Fiscal({ user }) {
             <label>Mês
               <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
             </label>
-            <button className="btn btn-gold" disabled={busy} onClick={exportarMes}>
+            <Btn className="btn-gold" disabled={busy} onClick={exportarMes}>
               Exportar XMLs do mês (.zip)
-            </button>
+            </Btn>
           </div>
           {gerente ? (
             <div className="form" style={{ marginTop: 16 }}>
@@ -154,13 +154,13 @@ export default function Fiscal({ user }) {
               <label>Justificativa
                 <input value={inut.justificativa} onChange={(e) => setInut({ ...inut, justificativa: e.target.value })} placeholder="Mínimo 15 caracteres" />
               </label>
-              <button
-                className="btn btn-ghost"
+              <Btn
+                className="btn-ghost"
                 disabled={busy}
                 onClick={() => run(() => api.inutilizarNfce(inut), "Faixa inutilizada.")}
               >
                 Inutilizar
-              </button>
+              </Btn>
             </div>
           ) : null}
         </div>
@@ -198,16 +198,16 @@ export default function Fiscal({ user }) {
                 <td>{money(nota.total)}</td>
                 <td className="muted">{nota.chave ? `${String(nota.chave).slice(0, 16)}…` : "—"}</td>
                 <td>
-                  {nota.xml ? <button className="btn btn-ghost" onClick={() => baixarXml(nota)}>XML</button> : null}
-                  {nota.status === "autorizada" ? <button className="btn btn-ghost" onClick={() => baixarDanfe(nota)}>DANFE</button> : null}
+                  {nota.xml ? <Btn className="btn-ghost" onClick={() => baixarXml(nota)}>XML</Btn> : null}
+                  {nota.status === "autorizada" ? <Btn className="btn-ghost" onClick={() => baixarDanfe(nota)}>DANFE</Btn> : null}
                   {gerente && nota.status === "autorizada" ? (
-                    <button
-                      className="btn btn-gold"
+                    <Btn
+                      className="btn-gold"
                       disabled={busy}
                       onClick={() => run(() => api.cancelarNfce({ notaId: nota.id, justificativa: just }), "NFC-e cancelada. Caixa e estoque estornados.")}
                     >
                       Cancelar
-                    </button>
+                    </Btn>
                   ) : null}
                 </td>
               </tr>
