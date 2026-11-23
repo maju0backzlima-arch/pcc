@@ -2,6 +2,8 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, NavLink } from "react-router-dom";
 import { api } from "../api.js";
 import { errorMessage } from "../errors.js";
+import { CMV_ALERTA, cmvProduto } from "../modules/financeiro/engine.js";
+import { canEditFicha, canSeeDre } from "../auth/permissoes.js";
 
 function money(value) {
   return (Number(value) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -63,6 +65,8 @@ function ingredientDraft(item) {
 }
 
 export default function Admin({ user }) {
+  const editaFicha = canEditFicha(user);
+  const veDre = canSeeDre(user);
   const [dash, setDash] = useState(emptyDash);
   const [tab, setTab] = useState("lista");
   const [query, setQuery] = useState("");
@@ -670,6 +674,7 @@ export default function Admin({ user }) {
                   <th>Produto</th>
                   <th>PDV+</th>
                   <th>Preço no site</th>
+                  <th>CMV</th>
                   <th>Estoque</th>
                   <th></th>
                 </tr>
@@ -677,9 +682,10 @@ export default function Admin({ user }) {
               <tbody>
                 {(dash.products || []).map((item) => {
                   const draft = drafts[item.id] || productDraft(item);
+                  const cmv = cmvProduto(item, dash.ingredients || []);
                   return (
                     <Fragment key={item.id}>
-                      <tr>
+                      <tr className={cmv.alerta ? "cmv-alerta" : ""}>
                         <td>
                           <input value={draft.name} onChange={(e) => changeDraft(item.id, { name: e.target.value })} />
                           <div className="muted">{item.category}</div>
@@ -695,6 +701,10 @@ export default function Admin({ user }) {
                               Usar PDV+
                             </button>
                           ) : null}
+                        </td>
+                        <td>
+                          {cmv.percent}%
+                          <div className="muted">{money(cmv.cmv)}{cmv.alerta ? ` · >${CMV_ALERTA}%` : ""}</div>
                         </td>
                         <td>
                           <input type="number" min="0" value={draft.stock} onChange={(e) => changeDraft(item.id, { stock: e.target.value })} />
@@ -716,15 +726,17 @@ export default function Admin({ user }) {
                             >
                               {item.active === false ? "Ativar" : "Ocultar"}
                             </button>
+                            {editaFicha ? (
                             <button className="btn btn-ghost" onClick={() => setRecipeOpen(recipeOpen === item.id ? "" : item.id)}>
                               Receita
                             </button>
+                            ) : null}
                           </div>
                         </td>
                       </tr>
                       {recipeOpen === item.id ? (
                         <tr>
-                          <td colSpan={5}>
+                          <td colSpan={6}>
                             <div className="recipe-box">
                               <p className="muted">A receita diz o que cada venda do PDV+ consome. Sem insumo, o item some do cardápio e entra na lista.</p>
                               {(draft.recipe || []).map((row, index) => (
@@ -967,10 +979,13 @@ export default function Admin({ user }) {
             </NavLink>
           </div>
           <div className="card">
-            <h3>Financeiro e DRE</h3>
-            <p className="muted">Fluxo de caixa por Pix/Crédito/Débito/Dinheiro, contas e lucro líquido.</p>
+            <h3>{veDre ? "Financeiro e DRE" : "Caixa"}</h3>
+            <p className="muted">Pix, crédito, débito, voucher, dinheiro, conferência de gaveta e NFC-e.</p>
             <NavLink className="btn btn-gold" to="/financeiro" style={{ display: "inline-block", marginTop: 12, textDecoration: "none" }}>
-              Abrir financeiro
+              Abrir {veDre ? "financeiro" : "caixa"}
+            </NavLink>
+            <NavLink className="btn btn-primary" to="/notas" style={{ display: "inline-block", marginTop: 12, marginLeft: 8, textDecoration: "none" }}>
+              Notas fiscais
             </NavLink>
           </div>
         </div>

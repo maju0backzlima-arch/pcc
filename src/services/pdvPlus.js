@@ -1,8 +1,10 @@
+import { normalizarMetodo, METODOS as FIN_METODOS } from "../modules/financeiro/engine.js";
+
 const PDVPLUS_API_KEY = "";
 const PDVPLUS_BASE_URL = "https://api.pdvplus.placeholder.local";
 const PDVPLUS_WEBHOOK_SECRET = "picnic-pdvplus";
 
-const METODOS = ["pix", "credito", "debito", "dinheiro"];
+export const METODOS = FIN_METODOS;
 
 export const pdvPlusConfig = {
   apiKey: PDVPLUS_API_KEY,
@@ -19,16 +21,12 @@ export function normalizarVenda(venda = {}) {
       : Array.isArray(venda.produtos)
         ? venda.produtos
         : [];
-  const metodo = String(venda.paymentMethod || venda.metodo || venda.formaPagamento || "pix")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-  const mapped = metodo.includes("cred") ? "credito" : metodo.includes("deb") ? "debito" : metodo.includes("din") ? "dinheiro" : "pix";
+  const mapped = normalizarMetodo(venda.paymentMethod || venda.metodo || venda.formaPagamento || "pix");
   return {
     id: venda.id || venda.vendaId || "",
     at: venda.at || venda.data || new Date().toISOString(),
     source: "pdvplus",
-    paymentMethod: METODOS.includes(mapped) ? mapped : "pix",
+    paymentMethod: mapped,
     note: venda.note || venda.observacao || "",
     items: items.map((line) => ({
       productId: line.productId || line.id || line.produtoId,
@@ -53,5 +51,3 @@ export async function pullSales() {
   const data = await res.json();
   return { ok: true, mock: false, sales: (data.sales || data.vendas || []).map(normalizarVenda) };
 }
-
-export { METODOS };

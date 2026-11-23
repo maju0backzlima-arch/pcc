@@ -14,10 +14,33 @@ import {
   computeDre,
   upsertDespesa,
   pagarDespesa,
-  defaultExpenses
+  defaultExpenses,
+  lancarManual,
+  upsertReceivable,
+  receberConta,
+  sangriaSuprimento,
+  conferirFechamento,
+  resumoCaixaDia
 } from "./modules/financeiro/engine.js";
+import {
+  defaultFiscal,
+  emitirNota,
+  cancelarNota,
+  inutilizarFaixa,
+  xmlsDoMes
+} from "./modules/fiscal/engine.js";
+import {
+  normalizeInsumo,
+  normalizeProdutoVenda,
+  processarVendaPDV,
+  registrarPerda,
+  parseXmlNfe,
+  entradaCompra,
+  gerarListaComprasInsumos
+} from "./modules/estoque/cafeteria.js";
 
 const KEY = "picnic-local-store";
+const USER_KEY = "picnic-local-user";
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -46,13 +69,13 @@ function availableUnits(product, ingredientMap) {
 
 function seed() {
   return {
-    ingredients: clone(ingredients).map((item) => ({
+    ingredients: clone(ingredients).map((item) => normalizeInsumo({
       ...item,
       targetStock: item.targetStock ?? roundQty((item.minStock || 0) * 2.5),
       active: item.active !== false
     })),
     products: clone(products).map((product) => ({
-      ...normalizeProduto(product),
+      ...normalizeProduto(normalizeProdutoVenda(product)),
       priceOverride: null,
       stockOverride: product.estoque_atual ?? null,
       lastPdvPrice: product.price,
@@ -64,7 +87,12 @@ function seed() {
     shoppingList: [],
     cashFlow: [],
     expenses: defaultExpenses(),
+    receivables: [],
+    perdas: [],
+    comprasNfe: [],
     notes: [],
+    fechamentos: [],
+    notas: [],
     settings: clone(defaultSettings),
     users: clone(users),
     pdvStock: {}
@@ -76,12 +104,20 @@ function hydrate(store) {
   store.settings.financeiro = {
     ...clone(defaultFinanceiro),
     ...(store.settings.financeiro || {}),
-    taxas: { ...clone(defaultFinanceiro).taxas, ...(store.settings.financeiro?.taxas || {}) }
+    taxas: { ...clone(defaultFinanceiro).taxas, ...(store.settings.financeiro?.taxas || {}) },
+    settlementDays: { ...clone(defaultFinanceiro).settlementDays, ...(store.settings.financeiro?.settlementDays || {}) }
   };
-  store.products = (store.products || []).map((product) => normalizeProduto(product));
+  store.products = (store.products || []).map((product) => normalizeProduto(normalizeProdutoVenda(product)));
+  store.ingredients = (store.ingredients || []).map((item) => normalizeInsumo(item));
   store.cashFlow = store.cashFlow || [];
   store.expenses = store.expenses?.length ? store.expenses : defaultExpenses();
+  store.receivables = store.receivables || [];
+  store.perdas = store.perdas || [];
+  store.comprasNfe = store.comprasNfe || [];
   store.notes = store.notes || [];
+  store.fechamentos = store.fechamentos || [];
+  store.notas = store.notas || [];
+  store.settings.fiscal = { ...defaultFiscal(), ...(store.settings.fiscal || {}) };
   return store;
 }
 
@@ -241,54 +277,20 @@ function snapshot() {
     expenses: store.expenses || [],
     dre: computeDre(store),
     financeiro: store.settings?.financeiro,
-    listaCompras: gerarListaCompras(store.products || []),
-    users: store.users.map((user) => ({ email: user.email, name: user.name, role: user.role }))
+    listaCompras: { ...gerarListaComprasInsumos(store.ingredients || []), produtos: gerarListaCompras(store.products || []) },
+    perdas: store.perdas || [],
+    comprasNfe: store.comprasNfe || [],
+    receivables: store.receivables || [],
+    fechamentos: (store.fechamentos || []).slice(0, 30),
+    caixaDia: resumoCaixaDia(store),
+    notas: (store.notas || []).slice(0, 80),
+    users: store.users.map((user) => ({ id: user.id, email: user.email, name: user.name, role: user.role, active: user.active !== false }))
   };
 }
 
-function registerSale(store, items) {
-  const at = new Date().toISOString();
-  const saleItems = [];
-  const consumedMap = new Map();
-  for (const line of items || []) {
-    const product = store.products.find((item) => item.id === line.productId || item.id === line.id);
-    const qty = Number(line.qty || 1);
-    if (!product || qty <= 0) continue;
-    const unitPrice = product.priceOverride != null ? Number(product.priceOverride) : Number(product.price);
-    for (const rec of product.recipe || []) {
-      const ingredient = store.ingredients.find((item) => item.id === rec.ingredientId);
-      if (!ingredient) continue;
-      const used = roundQty(rec.qty * qty);
-      ingredient.stock = roundQty(Math.max(0, Number(ingredient.stock) - used));
-      const prev = consumedMap.get(ingredient.id) || { ingredientId: ingredient.id, name: ingredient.name, unit: ingredient.unit, qty: 0 };
-      prev.qty = roundQty(prev.qty + used);
-      consumedMap.set(ingredient.id, prev);
-    }
-    baixarEstoqueProduto(product, qty);
-    registrarSaidaHistorico(store, { product, qty, saleId: "", at, note: `${product.name} x${qty}` });
-    const unitCost = Number(product.preco_custo ?? product.cost ?? 0);
-    saleItems.push({
-      productId: product.id,
-      sku: product.sku,
-      name: product.name,
-      qty,
-      price: unitPrice,
-      custo: unitCost,
-      cost: unitCost,
-      total: roundMoney(unitPrice * qty)
-    });
-  }
-  if (!saleItems.length) return null;
-  const sale = {
-    id: uid("sale"),
-    at,
-    source: "pdvplus",
-    paymentMethod: ["pix", "credito", "debito", "dinheiro"][Math.floor(Math.random() * 4)],
-    items: saleItems,
-    consumed: Array.from(consumedMap.values()),
-    total: roundMoney(saleItems.reduce((sum, item) => sum + item.total, 0)),
-    estornada: false
-  };
+function registerSale(store, items, extra = {}) {
+  const sale = processarVendaPDV(store, { items, ...extra, source: extra.source || "pdvplus" });
+  if (!sale) return null;
   store.sales.unshift(sale);
   store.sales = store.sales.slice(0, 80);
   store.cashFlow = store.cashFlow || [];
@@ -327,21 +329,31 @@ function json(path, options = {}) {
   if (path === "/api/login" && method === "POST") {
     const email = String(body.email || "").trim().toLowerCase();
     const password = String(body.password || "");
-    const user = store.users.find((entry) => entry.email.toLowerCase() === email && entry.password === password);
+    const user = store.users.find((entry) => entry.email.toLowerCase() === email && entry.password === password && entry.active !== false);
     if (!user) throw new Error("E-mail ou senha inválidos.");
     rebuild(store);
     save(store);
+    const sessionUser = { email: user.email, name: user.name, role: user.role };
+    try { localStorage.setItem(USER_KEY, JSON.stringify(sessionUser)); } catch {}
     return {
       token: `local-${Date.now()}`,
-      user: { email: user.email, name: user.name, role: user.role },
+      user: sessionUser,
       sync: { updated: store.products.length, at: store.settings.pdvAccount.lastSyncAt },
       ...snapshot()
     };
   }
 
-  if (path === "/api/logout") return { ok: true };
+  if (path === "/api/logout") {
+    try { localStorage.removeItem(USER_KEY); } catch {}
+    return { ok: true };
+  }
   if (path === "/api/session") {
-    return { user: { email: "loja@picnic.com", name: "Lojista PIC NIC", role: "admin" } };
+    try {
+      const raw = localStorage.getItem(USER_KEY);
+      if (raw) return { user: JSON.parse(raw) };
+    } catch {}
+    const admin = store.users.find((item) => item.role === "admin" && item.active !== false) || store.users[0];
+    return { user: { email: admin.email, name: admin.name, role: admin.role } };
   }
 
   if (path === "/api/pdv/sync" || path === "/api/admin/dashboard" || path === "/api/admin/products" || path === "/api/admin/ingredients" || path === "/api/admin/shopping") {
@@ -453,13 +465,8 @@ function json(path, options = {}) {
   }
 
   if (path === "/api/admin/sales" && method === "POST") {
-    const sale = registerSale(store, body.items);
+    const sale = registerSale(store, body.items, { paymentMethod: body.paymentMethod, note: body.note });
     if (!sale) throw new Error("Informe ao menos um item válido.");
-    if (body.paymentMethod) {
-      sale.paymentMethod = body.paymentMethod;
-      const entry = (store.cashFlow || [])[0];
-      if (entry && entry.saleId === sale.id) entry.metodo = body.paymentMethod;
-    }
     return { sale, ...snapshot() };
   }
 
@@ -630,13 +637,153 @@ function json(path, options = {}) {
       }
       for (const rec of sale.consumed || []) {
         const ingredient = store.ingredients.find((item) => item.id === rec.ingredientId);
-        if (ingredient) ingredient.stock = roundQty(Number(ingredient.stock || 0) + Number(rec.qty || 0));
+        if (ingredient) {
+          ingredient.stock = roundQty(Number(ingredient.stock || 0) + Number(rec.qty || 0));
+          ingredient.estoque_atual = ingredient.stock;
+        }
       }
       sale.estornada = true;
       estornarEntradaCaixa(store, sale.id);
       rebuild(store);
       save(store);
     }
+    return snapshot();
+  }
+
+  if (path === "/api/financeiro/lancar" && method === "POST") {
+    const entry = lancarManual(store, body);
+    save(store);
+    return { entry, ...snapshot() };
+  }
+
+  if (path === "/api/financeiro/caixa" && method === "POST") {
+    const entry = sangriaSuprimento(store, body);
+    save(store);
+    return { entry, ...snapshot() };
+  }
+
+  if (path === "/api/financeiro/receber" && method === "POST") {
+    const item = upsertReceivable(store, body);
+    save(store);
+    return { receivable: item, ...snapshot() };
+  }
+
+  const recMatch = path.match(/^\/api\/financeiro\/receber\/([^/]+)\/quitar$/);
+  if (recMatch && method === "POST") {
+    const item = receberConta(store, recMatch[1]);
+    if (!item) throw new Error("Conta não encontrada.");
+    save(store);
+    return { receivable: item, ...snapshot() };
+  }
+
+  if ((path === "/api/financeiro/caixa-dia" || String(fullPath).startsWith("/api/financeiro/caixa-dia")) && method === "GET") {
+    const raw = String(fullPath);
+    const qs = raw.includes("?") ? raw.slice(raw.indexOf("?") + 1) : "";
+    const params = new URLSearchParams(qs);
+    const day = params.get("date") || new Date().toISOString().slice(0, 10);
+    return { ...snapshot(), caixaDia: resumoCaixaDia(store, day) };
+  }
+
+  if (path === "/api/financeiro/conferencia" && method === "POST") {
+    const fechamento = conferirFechamento(store, body);
+    save(store);
+    return { fechamento, ...snapshot(), caixaDia: resumoCaixaDia(store, body.date) };
+  }
+
+  if (path === "/api/fiscal/notas" && method === "GET") return snapshot();
+
+  if (path === "/api/fiscal/emitir" && method === "POST") {
+    return emitirNota(store, body.vendaId || body.saleId, body.cpf).then((nota) => {
+      if (!nota) throw new Error("Venda não encontrada.");
+      save(store);
+      return { nota, ...snapshot() };
+    });
+  }
+
+  if (path === "/api/fiscal/cancelar" && method === "POST") {
+    return cancelarNota(store, body.notaId, body.justificativa, (s, sale) => {
+      if (!sale || sale.estornada) return sale;
+      for (const line of sale.items || []) {
+        const product = s.products.find((item) => item.id === line.productId);
+        if (product) devolverEstoqueProduto(product, line.qty);
+      }
+      for (const rec of sale.consumed || []) {
+        const ingredient = s.ingredients.find((item) => item.id === rec.ingredientId);
+        if (ingredient) {
+          ingredient.stock = roundQty(Number(ingredient.stock || 0) + Number(rec.qty || 0));
+          ingredient.estoque_atual = ingredient.stock;
+        }
+      }
+      sale.estornada = true;
+      estornarEntradaCaixa(s, sale.id);
+      rebuild(s);
+      return sale;
+    }).then((nota) => {
+      if (!nota) throw new Error("Nota não encontrada.");
+      save(store);
+      return { nota, ...snapshot() };
+    });
+  }
+
+  if (path === "/api/fiscal/inutilizar" && method === "POST") {
+    return inutilizarFaixa(store, body.numeroInicial, body.numeroFinal, body.justificativa).then((nota) => {
+      save(store);
+      return { nota, ...snapshot() };
+    });
+  }
+
+  if ((path === "/api/fiscal/xmls" || String(fullPath).startsWith("/api/fiscal/xmls")) && method === "GET") {
+    const raw = String(fullPath);
+    const qs = raw.includes("?") ? raw.slice(raw.indexOf("?") + 1) : "";
+    const params = new URLSearchParams(qs);
+    const month = params.get("month") || new Date().toISOString().slice(0, 7);
+    return { month, files: xmlsDoMes(store, month), ...snapshot() };
+  }
+
+  if (path === "/api/estoque/perdas" && method === "POST") {
+    const perda = registrarPerda(store, body);
+    if (!perda) throw new Error("Informe insumo e quantidade.");
+    rebuild(store);
+    save(store);
+    return { perda, ...snapshot() };
+  }
+
+  if (path === "/api/estoque/nfe/parse" && method === "POST") {
+    return parseXmlNfe(body.xml || "");
+  }
+
+  if (path === "/api/estoque/compras/entrada" && method === "POST") {
+    const compra = entradaCompra(store, body);
+    rebuild(store);
+    save(store);
+    return { compra, ...snapshot() };
+  }
+
+  if (path === "/api/config/colaboradores" && method === "POST") {
+    const email = String(body.email || "").trim().toLowerCase();
+    if (!email || !body.password) throw new Error("Informe e-mail e senha.");
+    if (store.users.some((item) => item.email.toLowerCase() === email)) throw new Error("Já existe colaborador com este e-mail.");
+    store.users.push({
+      id: uid("usr"),
+      email,
+      password: String(body.password),
+      name: String(body.name || email.split("@")[0]),
+      role: body.role || "operador",
+      active: true
+    });
+    save(store);
+    return snapshot();
+  }
+
+  const colabMatch = path.match(/^\/api\/config\/colaboradores\/([^/]+)$/);
+  if (colabMatch && method === "PATCH") {
+    const user = store.users.find((item) => item.id === colabMatch[1] || item.email === colabMatch[1]);
+    if (!user) throw new Error("Colaborador não encontrado.");
+    if (body.name != null) user.name = String(body.name);
+    if (body.role) user.role = String(body.role);
+    if (body.password) user.password = String(body.password);
+    if (body.active != null) user.active = Boolean(body.active);
+    save(store);
     return snapshot();
   }
 

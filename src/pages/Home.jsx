@@ -46,18 +46,16 @@ export default function Home() {
     <main className="page">
       <section className="hero">
         <div>
-          <p className="kicker">Painel interno · o que dá para servir agora</p>
-          <h1>Cardápio ao vivo da equipe.</h1>
+          <p className="kicker">Balcão · agora</p>
+          <h1>O que ainda sai da máquina.</h1>
           <p>
-            Este é o quadro da operação. Cada venda no PDV+ baixa o estoque e a
-            disponibilidade muda aqui na hora. Para compras, use a central da equipe.
+            Cada venda no PDV+ desconta a ficha técnica. Se o leite acaba, o cappuccino some daqui.
           </p>
         </div>
-        <div className="hero-card">
-          <h3>Como a equipe usa</h3>
+        <div className="hero-card steam-card">
+          <h3>Turno</h3>
           <p>
-            Confira o que ainda tem, chame o cliente no balcão e, se faltar insumo, a
-            lista de mercado na central já aponta o que comprar.
+            Olhe o cardápio, chame o pedido e deixe a lista de compras para o estoquista.
           </p>
         </div>
       </section>

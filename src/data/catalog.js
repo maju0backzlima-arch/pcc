@@ -170,11 +170,20 @@ export const defaultSettings = {
     lastSyncAt: null
   },
   financeiro: {
-    taxas: { pix: 0, credito: 3.49, debito: 1.99, dinheiro: 0 },
-    impostoPercent: 6
+    taxas: { pix: 0, credito: 3.49, debito: 1.99, voucher: 0, dinheiro: 0 },
+    settlementDays: { pix: 1, debito: 1, voucher: 1, credito: 30, dinheiro: 0 },
+    impostoPercent: 6,
+    regime: "simples_nacional",
+    fundoCaixa: 200,
+    cmvAlerta: 32
+  },
+  fiscal: {
+    serie: 1,
+    proximoNumero: 1,
+    ambiente: "homologacao"
   }
 };
 
 export const users = [
-  { email: "loja@picnic.com", password: "picnic123", name: "Lojista PIC NIC", role: "admin" }
+  { id: "usr-admin", email: "picnic@gmail.com", password: "Capuccino123", name: "Lojista PIC NIC", role: "admin", active: true }
 ];

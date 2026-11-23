@@ -6,6 +6,10 @@ import Login from "./pages/Login.jsx";
 import Admin from "./pages/Admin.jsx";
 import Estoque from "./pages/Estoque.jsx";
 import Financeiro from "./pages/Financeiro.jsx";
+import Config from "./pages/Config.jsx";
+import Ajuda from "./pages/Ajuda.jsx";
+import Fiscal from "./pages/Fiscal.jsx";
+import { canManageEquipe, canSeeDre } from "./auth/permissoes.js";
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -37,7 +41,7 @@ export default function App() {
   if (!ready) {
     return (
       <div className="login-wrap">
-        <p style={{ color: "#f8f1ea" }}>Abrindo o PIC NIC...</p>
+        <p className="boot-copy">Aquecendo a máquina…</p>
       </div>
     );
   }
@@ -60,7 +64,10 @@ export default function App() {
             <>
               <NavLink to="/admin">Central da equipe</NavLink>
               <NavLink to="/estoque">Estoque</NavLink>
-              <NavLink to="/financeiro">Financeiro</NavLink>
+              <NavLink to="/financeiro">{canSeeDre(user) ? "Financeiro" : "Caixa"}</NavLink>
+              <NavLink to="/notas">Notas</NavLink>
+              {canManageEquipe(user) ? <NavLink to="/config">Equipe</NavLink> : null}
+              <NavLink to="/ajuda">Manual</NavLink>
               <button className="linkish" onClick={logout}>
                 Sair
               </button>
@@ -76,6 +83,9 @@ export default function App() {
         <Route path="/admin" element={<Admin user={user} />} />
         <Route path="/estoque" element={<Estoque user={user} />} />
         <Route path="/financeiro" element={<Financeiro user={user} />} />
+        <Route path="/notas" element={<Fiscal user={user} />} />
+        <Route path="/config" element={<Config user={user} />} />
+        <Route path="/ajuda" element={<Ajuda />} />
       </Routes>
       <footer className="foot">
         <span>PIC NIC · uso interno da equipe</span>

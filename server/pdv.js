@@ -59,7 +59,7 @@ export function simulatePdvSale(store) {
   const product = pickWeighted(live);
   if (!product) return null;
   const qty = Math.random() > 0.72 ? 2 : 1;
-  const metodos = ["pix", "credito", "debito", "dinheiro"];
+  const metodos = ["pix", "credito", "debito", "voucher", "dinheiro"];
   return registerSale(store, {
     source: "pdvplus",
     paymentMethod: metodos[Math.floor(Math.random() * metodos.length)],

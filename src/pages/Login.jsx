@@ -4,8 +4,8 @@ import { api, setToken } from "../api.js";
 import { errorMessage } from "../errors.js";
 
 export default function Login({ onLogin }) {
-  const [email, setEmail] = useState("loja@picnic.com");
-  const [password, setPassword] = useState("picnic123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [syncNote, setSyncNote] = useState("");
@@ -34,8 +34,8 @@ export default function Login({ onLogin }) {
     <div className="login-wrap">
       <form className="login-card" onSubmit={submit}>
         <img src="/logo.webp" alt="PIC NIC" />
-        <h1>Central da equipe</h1>
-        <p>Ambiente interno: cardápio, estoque e lista de mercado ligados ao PDV+.</p>
+        <h1>Entrar</h1>
+        <p>Central da cafeteria. Cardápio, estoque e caixa no mesmo turno.</p>
         <div className="form">
           <label>
             E-mail
@@ -53,7 +53,7 @@ export default function Login({ onLogin }) {
           {error ? <p className="err">{error}</p> : null}
           {syncNote ? <p className="ok">{syncNote}</p> : null}
           <button className="btn btn-primary" disabled={busy}>
-            {busy ? "Sincronizando PDV+..." : "Entrar e sincronizar"}
+            {busy ? "Entrando..." : "Entrar"}
           </button>
         </div>
       </form>

@@ -17,13 +17,36 @@ import {
   computeDre,
   upsertDespesa,
   pagarDespesa,
-  defaultExpenses
+  defaultExpenses,
+  lancarManual,
+  upsertReceivable,
+  receberConta,
+  sangriaSuprimento,
+  conferirFechamento,
+  resumoCaixaDia
 } from "../src/modules/financeiro/engine.js";
+import {
+  defaultFiscal,
+  emitirNota,
+  cancelarNota,
+  inutilizarFaixa,
+  notasDoMes,
+  xmlsDoMes
+} from "../src/modules/fiscal/engine.js";
+import {
+  normalizeInsumo,
+  normalizeProdutoVenda,
+  processarVendaPDV,
+  registrarPerda,
+  parseXmlNfe,
+  entradaCompra,
+  gerarListaComprasInsumos
+} from "../src/modules/estoque/cafeteria.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.join(__dirname, "data");
 const storeFile = path.join(dataDir, "store.json");
-const SEED_VERSION = 5;
+const SEED_VERSION = 6;
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -67,13 +90,13 @@ function productsUsing(store, ingredientId) {
 export function seedStore() {
   return {
     seedVersion: SEED_VERSION,
-    ingredients: clone(ingredients).map((item) => ({
+    ingredients: clone(ingredients).map((item) => normalizeInsumo({
       ...item,
       targetStock: item.targetStock ?? roundQty((item.minStock || 0) * 2.5),
       active: item.active !== false
     })),
     products: clone(products).map((product) => ({
-      ...normalizeProduto(product),
+      ...normalizeProduto(normalizeProdutoVenda(product)),
       priceOverride: null,
       stockOverride: product.estoque_atual ?? null,
       lastPdvPrice: product.price,
@@ -85,7 +108,12 @@ export function seedStore() {
     shoppingList: [],
     cashFlow: [],
     expenses: defaultExpenses(),
+    receivables: [],
+    perdas: [],
+    comprasNfe: [],
     notes: [],
+    fechamentos: [],
+    notas: [],
     settings: clone(defaultSettings),
     users: clone(users),
     pdvCatalog: clone(products).map((product) => ({
@@ -123,9 +151,13 @@ function hydrate(store) {
     taxas: {
       ...clone(defaultFinanceiro).taxas,
       ...(store.settings.financeiro?.taxas || {})
+    },
+    settlementDays: {
+      ...clone(defaultFinanceiro).settlementDays,
+      ...(store.settings.financeiro?.settlementDays || {})
     }
   };
-  store.ingredients = (store.ingredients || []).map((item) => ({
+  store.ingredients = (store.ingredients || []).map((item) => normalizeInsumo({
     ...item,
     targetStock: item.targetStock ?? roundQty((item.minStock || 0) * 2.5),
     active: item.active !== false
@@ -137,8 +169,20 @@ function hydrate(store) {
   store.pdvStock = store.pdvStock || {};
   store.cashFlow = store.cashFlow || [];
   store.expenses = store.expenses?.length ? store.expenses : defaultExpenses();
+  store.receivables = store.receivables || [];
+  store.perdas = store.perdas || [];
+  store.comprasNfe = store.comprasNfe || [];
   store.notes = store.notes || [];
-  store.products = (store.products || []).map((product) => normalizeProduto(product));
+  store.fechamentos = store.fechamentos || [];
+  store.notas = store.notas || [];
+  store.settings.fiscal = { ...defaultFiscal(), ...(store.settings.fiscal || {}) };
+  store.products = (store.products || []).map((product) => normalizeProduto(normalizeProdutoVenda(product)));
+  store.users = (store.users || []).map((user) => ({
+    ...user,
+    id: user.id || `usr-${String(user.email || "").split("@")[0]}`,
+    active: user.active !== false,
+    role: user.role || "operador"
+  }));
   return store;
 }
 
@@ -279,83 +323,8 @@ export function rebuildShoppingList(store) {
 }
 
 export function registerSale(store, payload) {
-  const lines = Array.isArray(payload?.items) ? payload.items : [];
-  const source = payload?.source || "pdvplus";
-  const note = payload?.note || "";
-  const at = new Date().toISOString();
-  const saleItems = [];
-  const consumedMap = new Map();
-
-  for (const line of lines) {
-    const product = store.products.find(
-      (item) =>
-        item.id === line.productId ||
-        item.id === line.id ||
-        item.sku === line.sku ||
-        item.name === (line.name || line.nome)
-    );
-    const qty = Number(line.qty ?? line.quantidade ?? 1);
-    if (!product || qty <= 0) continue;
-    const unitPrice = product.priceOverride != null ? Number(product.priceOverride) : Number(product.price);
-    for (const rec of product.recipe || []) {
-      const ingredient = store.ingredients.find((item) => item.id === rec.ingredientId);
-      if (!ingredient) continue;
-      const used = roundQty(rec.qty * qty);
-      ingredient.stock = roundQty(Math.max(0, Number(ingredient.stock) - used));
-      const prev = consumedMap.get(ingredient.id) || {
-        ingredientId: ingredient.id,
-        name: ingredient.name,
-        unit: ingredient.unit,
-        qty: 0,
-        stockAfter: 0,
-        minStock: ingredient.minStock
-      };
-      prev.qty = roundQty(prev.qty + used);
-      prev.stockAfter = ingredient.stock;
-      consumedMap.set(ingredient.id, prev);
-      store.movements.unshift({
-        id: uid("mov"),
-        at,
-        type: "sale",
-        ingredientId: ingredient.id,
-        qty: -used,
-        note: `${product.name} x${qty}`
-      });
-    }
-    baixarEstoqueProduto(product, qty);
-    registrarSaidaHistorico(store, {
-      product,
-      qty,
-      saleId: "",
-      at,
-      note: `${product.name} x${qty}`
-    });
-    const unitCost = Number(product.preco_custo ?? product.cost ?? 0);
-    saleItems.push({
-      productId: product.id,
-      sku: product.sku,
-      name: product.name,
-      qty,
-      price: unitPrice,
-      custo: unitCost,
-      cost: unitCost,
-      total: roundMoney(unitPrice * qty)
-    });
-  }
-
-  if (!saleItems.length) return null;
-
-  const sale = {
-    id: uid("sale"),
-    at,
-    source,
-    note,
-    paymentMethod: payload?.paymentMethod || payload?.metodo || "pix",
-    items: saleItems,
-    consumed: Array.from(consumedMap.values()),
-    total: roundMoney(saleItems.reduce((sum, item) => sum + item.total, 0)),
-    estornada: false
-  };
+  const sale = processarVendaPDV(store, payload);
+  if (!sale) return null;
   store.sales.unshift(sale);
   store.sales = store.sales.slice(0, 400);
   store.movements = store.movements.slice(0, 800);
@@ -364,7 +333,7 @@ export function registerSale(store, payload) {
   store.cashFlow = store.cashFlow.slice(0, 800);
   rebuildPdvStock(store);
   rebuildShoppingList(store);
-  store.settings.pdvAccount.lastSyncAt = at;
+  store.settings.pdvAccount.lastSyncAt = sale.at;
   store.settings.pdvAccount.connected = true;
   return sale;
 }
@@ -460,16 +429,22 @@ export function handlePdvSale(store, venda) {
 }
 
 export function gerarListaCompras(store) {
-  return buildListaCompras(store.products || []);
+  const produtos = buildListaCompras(store.products || []);
+  const insumos = gerarListaComprasInsumos(store.ingredients || []);
+  return { ...insumos, produtos };
 }
 
 export function financeSnapshot(store, from, to) {
   refreshDespesas(store);
+  const day = new Date().toISOString().slice(0, 10);
   return {
     cashFlow: (store.cashFlow || []).slice(0, 80),
     expenses: store.expenses || [],
     dre: computeDre(store, from, to),
-    financeiro: store.settings?.financeiro || defaultFinanceiro
+    financeiro: store.settings?.financeiro || defaultFinanceiro,
+    receivables: store.receivables || [],
+    fechamentos: (store.fechamentos || []).slice(0, 30),
+    caixaDia: resumoCaixaDia(store, day)
   };
 }
 
@@ -484,6 +459,7 @@ export function reverseSaleStock(store, sale) {
     const ingredient = store.ingredients.find((item) => item.id === rec.ingredientId);
     if (!ingredient) continue;
     ingredient.stock = roundQty(Number(ingredient.stock || 0) + Number(rec.qty || 0));
+    ingredient.estoque_atual = ingredient.stock;
   }
   sale.estornada = true;
   estornarEntradaCaixa(store, sale.id);
@@ -502,5 +478,20 @@ export {
   upsertDespesa,
   pagarDespesa,
   refreshDespesas,
-  estornarEntradaCaixa
+  estornarEntradaCaixa,
+  lancarManual,
+  upsertReceivable,
+  receberConta,
+  sangriaSuprimento,
+  conferirFechamento,
+  resumoCaixaDia,
+  registrarPerda,
+  parseXmlNfe,
+  entradaCompra,
+  gerarListaComprasInsumos,
+  emitirNota,
+  cancelarNota,
+  inutilizarFaixa,
+  notasDoMes,
+  xmlsDoMes
 };

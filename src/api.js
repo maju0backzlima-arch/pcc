@@ -28,7 +28,7 @@ function looksLikeHtml(text, res) {
 }
 
 function ourApi(data) {
-  return data && (Array.isArray(data.products) || data.token || data.user || data.ok || data.sync || data.shoppingList || data.dre || data.listaCompras || data.cashFlow || data.expenses);
+  return data && (Array.isArray(data.products) || data.token || data.user || data.ok || data.sync || data.shoppingList || data.dre || data.listaCompras || data.cashFlow || data.expenses || data.notas || data.files);
 }
 
 let mode = staticHost() ? "local" : "auto";
@@ -129,5 +129,39 @@ export const api = {
     request(`/api/financeiro/despesas/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   pagarDespesa: (id) => request(`/api/financeiro/despesas/${id}/pagar`, { method: "POST" }),
   removeDespesa: (id) => request(`/api/financeiro/despesas/${id}/remover`, { method: "POST" }),
-  estornarVenda: (id) => request(`/api/financeiro/vendas/${id}/estornar`, { method: "POST" })
+  estornarVenda: (id) => request(`/api/financeiro/vendas/${id}/estornar`, { method: "POST" }),
+  lancarCaixa: (payload) =>
+    request("/api/financeiro/lancar", { method: "POST", body: JSON.stringify(payload) }),
+  sangria: (payload) =>
+    request("/api/financeiro/caixa", { method: "POST", body: JSON.stringify(payload) }),
+  createReceber: (payload) =>
+    request("/api/financeiro/receber", { method: "POST", body: JSON.stringify(payload) }),
+  quitarReceber: (id) => request(`/api/financeiro/receber/${id}/quitar`, { method: "POST" }),
+  caixaDia: (date) => {
+    const q = date ? `?date=${encodeURIComponent(date)}` : "";
+    return request(`/api/financeiro/caixa-dia${q}`);
+  },
+  conferirCaixa: (payload) =>
+    request("/api/financeiro/conferencia", { method: "POST", body: JSON.stringify(payload) }),
+  registrarPerda: (payload) =>
+    request("/api/estoque/perdas", { method: "POST", body: JSON.stringify(payload) }),
+  parseNfe: (xml) =>
+    request("/api/estoque/nfe/parse", { method: "POST", body: JSON.stringify({ xml }) }),
+  entradaCompra: (payload) =>
+    request("/api/estoque/compras/entrada", { method: "POST", body: JSON.stringify(payload) }),
+  createColaborador: (payload) =>
+    request("/api/config/colaboradores", { method: "POST", body: JSON.stringify(payload) }),
+  updateColaborador: (id, payload) =>
+    request(`/api/config/colaboradores/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  notas: () => request("/api/fiscal/notas"),
+  emitirNfce: (payload) =>
+    request("/api/fiscal/emitir", { method: "POST", body: JSON.stringify(payload) }),
+  cancelarNfce: (payload) =>
+    request("/api/fiscal/cancelar", { method: "POST", body: JSON.stringify(payload) }),
+  inutilizarNfce: (payload) =>
+    request("/api/fiscal/inutilizar", { method: "POST", body: JSON.stringify(payload) }),
+  xmlsMes: (month) => {
+    const q = month ? `?month=${encodeURIComponent(month)}` : "";
+    return request(`/api/fiscal/xmls${q}`);
+  }
 };

@@ -19,7 +19,20 @@ import {
   financeSnapshot,
   reverseSaleStock,
   upsertDespesa,
-  pagarDespesa
+  pagarDespesa,
+  lancarManual,
+  upsertReceivable,
+  receberConta,
+  sangriaSuprimento,
+  conferirFechamento,
+  resumoCaixaDia,
+  registrarPerda,
+  parseXmlNfe,
+  entradaCompra,
+  emitirNota,
+  cancelarNota,
+  inutilizarFaixa,
+  xmlsDoMes
 } from "./store.js";
 import { simulatePdvCatalog, applyPdvSync, simulatePdvSale } from "./pdv.js";
 import { normalizarVenda } from "../src/services/pdvPlus.js";
@@ -60,7 +73,12 @@ function adminProduct(product) {
     lastPdvStock: product.lastPdvStock,
     cost: product.cost,
     margin: product.margin,
-    recipe: product.recipe || []
+    recipe: product.recipe || [],
+    tipo: product.tipo,
+    ncm: product.ncm,
+    cfop: product.cfop,
+    csosn: product.csosn,
+    fichaTecnica: product.fichaTecnica || []
   };
 }
 
@@ -82,10 +100,18 @@ function snapshot() {
     dre: financeSnapshot(store).dre,
     financeiro: store.settings?.financeiro,
     listaCompras: gerarListaCompras(store),
+    perdas: store.perdas || [],
+    comprasNfe: store.comprasNfe || [],
+    receivables: store.receivables || [],
+    fechamentos: (store.fechamentos || []).slice(0, 30),
+    caixaDia: resumoCaixaDia(store),
+    notas: (store.notas || []).slice(0, 80),
     users: store.users.map((user) => ({
+      id: user.id,
       email: user.email,
       name: user.name,
-      role: user.role
+      role: user.role,
+      active: user.active !== false
     }))
   };
 }
@@ -109,6 +135,16 @@ function authUser(req) {
 function requireAdmin(req, res, next) {
   const user = authUser(req);
   if (!user) return res.status(401).json({ error: "Faça login para continuar." });
+  req.user = user;
+  next();
+}
+
+function requireGerente(req, res, next) {
+  const user = authUser(req);
+  if (!user) return res.status(401).json({ error: "Faça login para continuar." });
+  if (user.role !== "admin" && user.role !== "financeiro") {
+    return res.status(403).json({ error: "Somente gerente/dono pode cancelar NFC-e e ver a DRE." });
+  }
   req.user = user;
   next();
 }
@@ -150,7 +186,7 @@ async function start() {
       const password = String(req.body?.password || "");
       const store = loadStore();
       const user = store.users.find(
-        (entry) => entry.email.toLowerCase() === email && entry.password === password
+        (entry) => entry.email.toLowerCase() === email && entry.password === password && entry.active !== false
       );
       if (!user) {
         return res.status(401).json({ error: "E-mail ou senha inválidos." });
@@ -592,6 +628,162 @@ async function start() {
     reverseSaleStock(store, sale);
     saveStore(store);
     broadcast("sale");
+    res.json(snapshot());
+  });
+
+  app.post("/api/financeiro/lancar", requireAdmin, (req, res) => {
+    const store = loadStore();
+    const row = lancarManual(store, req.body || {});
+    saveStore(store);
+    broadcast("settings");
+    res.json({ entry: row, ...snapshot() });
+  });
+
+  app.post("/api/financeiro/caixa", requireAdmin, (req, res) => {
+    const store = loadStore();
+    const row = sangriaSuprimento(store, req.body || {});
+    saveStore(store);
+    broadcast("settings");
+    res.json({ entry: row, ...snapshot() });
+  });
+
+  app.post("/api/financeiro/receber", requireAdmin, (req, res) => {
+    const store = loadStore();
+    const item = upsertReceivable(store, req.body || {});
+    saveStore(store);
+    broadcast("settings");
+    res.json({ receivable: item, ...snapshot() });
+  });
+
+  app.post("/api/financeiro/receber/:id/quitar", requireAdmin, (req, res) => {
+    const store = loadStore();
+    const item = receberConta(store, req.params.id);
+    if (!item) return res.status(404).json({ error: "Conta não encontrada." });
+    saveStore(store);
+    broadcast("settings");
+    res.json({ receivable: item, ...snapshot() });
+  });
+
+  app.get("/api/financeiro/caixa-dia", requireAdmin, (req, res) => {
+    const store = loadStore();
+    const day = String(req.query.date || new Date().toISOString().slice(0, 10));
+    res.json({ ...snapshot(), caixaDia: resumoCaixaDia(store, day) });
+  });
+
+  app.post("/api/financeiro/conferencia", requireAdmin, (req, res) => {
+    const store = loadStore();
+    const fechamento = conferirFechamento(store, {
+      ...(req.body || {}),
+      operador: req.user?.email || req.body?.operador || ""
+    });
+    saveStore(store);
+    broadcast("settings");
+    const day = String(req.body?.date || new Date().toISOString().slice(0, 10));
+    res.json({ fechamento, ...snapshot(), caixaDia: resumoCaixaDia(store, day) });
+  });
+
+  app.get("/api/fiscal/notas", requireAdmin, (_req, res) => {
+    res.json(snapshot());
+  });
+
+  app.post("/api/fiscal/emitir", requireAdmin, async (req, res) => {
+    try {
+      const store = loadStore();
+      const nota = await emitirNota(store, req.body?.vendaId || req.body?.saleId, req.body?.cpf);
+      if (!nota) return res.status(404).json({ error: "Venda não encontrada." });
+      saveStore(store);
+      broadcast("sale");
+      res.json({ nota, ...snapshot() });
+    } catch (err) {
+      res.status(400).json({ error: err.message || "Falha ao emitir NFC-e." });
+    }
+  });
+
+  app.post("/api/fiscal/cancelar", requireGerente, async (req, res) => {
+    try {
+      const store = loadStore();
+      const nota = await cancelarNota(store, req.body?.notaId, req.body?.justificativa, reverseSaleStock);
+      if (!nota) return res.status(404).json({ error: "Nota não encontrada." });
+      saveStore(store);
+      broadcast("sale");
+      res.json({ nota, ...snapshot() });
+    } catch (err) {
+      res.status(400).json({ error: err.message || "Falha ao cancelar NFC-e." });
+    }
+  });
+
+  app.post("/api/fiscal/inutilizar", requireGerente, async (req, res) => {
+    try {
+      const store = loadStore();
+      const nota = await inutilizarFaixa(store, req.body?.numeroInicial, req.body?.numeroFinal, req.body?.justificativa);
+      saveStore(store);
+      broadcast("settings");
+      res.json({ nota, ...snapshot() });
+    } catch (err) {
+      res.status(400).json({ error: err.message || "Falha ao inutilizar numeração." });
+    }
+  });
+
+  app.get("/api/fiscal/xmls", requireAdmin, (req, res) => {
+    const store = loadStore();
+    const month = String(req.query.month || new Date().toISOString().slice(0, 7));
+    res.json({ month, files: xmlsDoMes(store, month), ...snapshot() });
+  });
+
+  app.post("/api/estoque/perdas", requireAdmin, (req, res) => {
+    const store = loadStore();
+    const perda = registrarPerda(store, req.body || {});
+    if (!perda) return res.status(400).json({ error: "Informe insumo e quantidade." });
+    rebuildPdvStock(store);
+    rebuildShoppingList(store);
+    saveStore(store);
+    broadcast("ingredients");
+    res.json({ perda, ...snapshot() });
+  });
+
+  app.post("/api/estoque/nfe/parse", requireAdmin, (req, res) => {
+    res.json(parseXmlNfe(req.body?.xml || ""));
+  });
+
+  app.post("/api/estoque/compras/entrada", requireAdmin, (req, res) => {
+    const store = loadStore();
+    const compra = entradaCompra(store, req.body || {});
+    rebuildPdvStock(store);
+    rebuildShoppingList(store);
+    saveStore(store);
+    broadcast("ingredients");
+    res.json({ compra, ...snapshot() });
+  });
+
+  app.post("/api/config/colaboradores", requireAdmin, (req, res) => {
+    const store = loadStore();
+    const body = req.body || {};
+    const email = String(body.email || "").trim().toLowerCase();
+    if (!email || !body.password) return res.status(400).json({ error: "Informe e-mail e senha." });
+    if (store.users.some((item) => item.email.toLowerCase() === email)) {
+      return res.status(400).json({ error: "Já existe colaborador com este e-mail." });
+    }
+    store.users.push({
+      id: uid("usr"),
+      email,
+      password: String(body.password),
+      name: String(body.name || email.split("@")[0]),
+      role: body.role || "operador",
+      active: true
+    });
+    saveStore(store);
+    res.json(snapshot());
+  });
+
+  app.patch("/api/config/colaboradores/:id", requireAdmin, (req, res) => {
+    const store = loadStore();
+    const user = store.users.find((item) => item.id === req.params.id || item.email === req.params.id);
+    if (!user) return res.status(404).json({ error: "Colaborador não encontrado." });
+    if (req.body.name != null) user.name = String(req.body.name);
+    if (req.body.role) user.role = String(req.body.role);
+    if (req.body.password) user.password = String(req.body.password);
+    if (req.body.active != null) user.active = Boolean(req.body.active);
+    saveStore(store);
     res.json(snapshot());
   });
 
