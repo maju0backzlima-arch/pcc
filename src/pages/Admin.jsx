@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, NavLink } from "react-router-dom";
 import { api } from "../api.js";
 import { errorMessage } from "../errors.js";
 
@@ -22,7 +22,8 @@ const TABS = [
   { id: "insumos", label: "Insumos" },
   { id: "cardapio", label: "Cardápio" },
   { id: "vendas", label: "Vendas PDV+" },
-  { id: "ajustes", label: "Ajustes" }
+  { id: "ajustes", label: "Ajustes" },
+  { id: "modulos", label: "Módulos" }
 ];
 
 const emptyDash = {
@@ -952,6 +953,25 @@ export default function Admin({ user }) {
             <button className="btn btn-ghost" style={{ marginTop: 12 }} disabled={busy} onClick={() => run(() => api.updateUser(account), "Dados de acesso atualizados.")}>
               Salvar acesso
             </button>
+          </div>
+        </div>
+      ) : null}
+
+      {tab === "modulos" ? (
+        <div className="split">
+          <div className="card">
+            <h3>Estoque e PDV+</h3>
+            <p className="muted">Produtos com estoque_atual, mínimo, ideal e lista de compras por fornecedor.</p>
+            <NavLink className="btn btn-primary" to="/estoque" style={{ display: "inline-block", marginTop: 12, textDecoration: "none" }}>
+              Abrir estoque
+            </NavLink>
+          </div>
+          <div className="card">
+            <h3>Financeiro e DRE</h3>
+            <p className="muted">Fluxo de caixa por Pix/Crédito/Débito/Dinheiro, contas e lucro líquido.</p>
+            <NavLink className="btn btn-gold" to="/financeiro" style={{ display: "inline-block", marginTop: 12, textDecoration: "none" }}>
+              Abrir financeiro
+            </NavLink>
           </div>
         </div>
       ) : null}

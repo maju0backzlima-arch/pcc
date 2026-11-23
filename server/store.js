@@ -2,11 +2,28 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { ingredients, products, defaultSettings, users } from "../src/data/catalog.js";
+import {
+  normalizeProduto,
+  baixarEstoqueProduto,
+  devolverEstoqueProduto,
+  gerarListaCompras as buildListaCompras,
+  registrarSaidaHistorico
+} from "../src/modules/estoque/engine.js";
+import {
+  defaultFinanceiro,
+  criarEntradaCaixa,
+  estornarEntradaCaixa,
+  refreshDespesas,
+  computeDre,
+  upsertDespesa,
+  pagarDespesa,
+  defaultExpenses
+} from "../src/modules/financeiro/engine.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.join(__dirname, "data");
 const storeFile = path.join(dataDir, "store.json");
-const SEED_VERSION = 4;
+const SEED_VERSION = 5;
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -56,16 +73,19 @@ export function seedStore() {
       active: item.active !== false
     })),
     products: clone(products).map((product) => ({
-      ...product,
+      ...normalizeProduto(product),
       priceOverride: null,
-      stockOverride: null,
+      stockOverride: product.estoque_atual ?? null,
       lastPdvPrice: product.price,
-      lastPdvStock: null
+      lastPdvStock: product.estoque_atual ?? null
     })),
     sales: [],
     purchases: [],
     movements: [],
     shoppingList: [],
+    cashFlow: [],
+    expenses: defaultExpenses(),
+    notes: [],
     settings: clone(defaultSettings),
     users: clone(users),
     pdvCatalog: clone(products).map((product) => ({
@@ -97,6 +117,14 @@ function hydrate(store) {
     ...clone(defaultSettings).shopping,
     ...(store.settings.shopping || {})
   };
+  store.settings.financeiro = {
+    ...clone(defaultFinanceiro),
+    ...(store.settings.financeiro || {}),
+    taxas: {
+      ...clone(defaultFinanceiro).taxas,
+      ...(store.settings.financeiro?.taxas || {})
+    }
+  };
   store.ingredients = (store.ingredients || []).map((item) => ({
     ...item,
     targetStock: item.targetStock ?? roundQty((item.minStock || 0) * 2.5),
@@ -107,6 +135,10 @@ function hydrate(store) {
   store.purchases = (store.purchases || []).slice(0, 40);
   store.movements = (store.movements || []).slice(0, 120);
   store.pdvStock = store.pdvStock || {};
+  store.cashFlow = store.cashFlow || [];
+  store.expenses = store.expenses?.length ? store.expenses : defaultExpenses();
+  store.notes = store.notes || [];
+  store.products = (store.products || []).map((product) => normalizeProduto(product));
   return store;
 }
 
@@ -290,12 +322,23 @@ export function registerSale(store, payload) {
         note: `${product.name} x${qty}`
       });
     }
+    baixarEstoqueProduto(product, qty);
+    registrarSaidaHistorico(store, {
+      product,
+      qty,
+      saleId: "",
+      at,
+      note: `${product.name} x${qty}`
+    });
+    const unitCost = Number(product.preco_custo ?? product.cost ?? 0);
     saleItems.push({
       productId: product.id,
       sku: product.sku,
       name: product.name,
       qty,
       price: unitPrice,
+      custo: unitCost,
+      cost: unitCost,
       total: roundMoney(unitPrice * qty)
     });
   }
@@ -307,13 +350,18 @@ export function registerSale(store, payload) {
     at,
     source,
     note,
+    paymentMethod: payload?.paymentMethod || payload?.metodo || "pix",
     items: saleItems,
     consumed: Array.from(consumedMap.values()),
-    total: roundMoney(saleItems.reduce((sum, item) => sum + item.total, 0))
+    total: roundMoney(saleItems.reduce((sum, item) => sum + item.total, 0)),
+    estornada: false
   };
   store.sales.unshift(sale);
   store.sales = store.sales.slice(0, 400);
   store.movements = store.movements.slice(0, 800);
+  store.cashFlow = store.cashFlow || [];
+  store.cashFlow.unshift(criarEntradaCaixa({ sale, metodo: sale.paymentMethod, settings: store.settings }));
+  store.cashFlow = store.cashFlow.slice(0, 800);
   rebuildPdvStock(store);
   rebuildShoppingList(store);
   store.settings.pdvAccount.lastSyncAt = at;
@@ -362,13 +410,15 @@ export function withComputed(store) {
     const pdvStock = store.pdvStock[product.id];
     const recipeStock = availableUnits(product, ingredientMap);
     const liveStock =
-      product.stockOverride != null
-        ? Number(product.stockOverride)
-        : pdvStock != null
-          ? Number(pdvStock)
-          : recipeStock;
+      product.estoque_atual != null
+        ? Number(product.estoque_atual)
+        : product.stockOverride != null
+          ? Number(product.stockOverride)
+          : pdvStock != null
+            ? Number(pdvStock)
+            : recipeStock;
     const livePrice =
-      product.priceOverride != null ? Number(product.priceOverride) : Number(product.price);
+      product.priceOverride != null ? Number(product.priceOverride) : Number(product.preco_venda ?? product.price);
     const cost = roundMoney(
       (product.recipe || []).reduce((sum, item) => {
         const ing = ingredientMap[item.ingredientId];
@@ -380,6 +430,13 @@ export function withComputed(store) {
       price: livePrice,
       available: Math.max(0, liveStock),
       cost,
+      preco_custo: Number(product.preco_custo ?? cost),
+      preco_venda: livePrice,
+      estoque_atual: Math.max(0, liveStock),
+      estoque_minimo: Number(product.estoque_minimo ?? 4),
+      estoque_ideal: Number(product.estoque_ideal ?? 12),
+      fornecedor: product.fornecedor || "Sem fornecedor",
+      nome: product.nome || product.name,
       margin: roundMoney(livePrice - cost),
       source: product.priceOverride != null || product.stockOverride != null ? "manual" : "pdvplus"
     };
@@ -398,4 +455,52 @@ export function shoppingSummary(store) {
   };
 }
 
-export { roundMoney, roundQty, availableUnits, uid, targetOf };
+export function handlePdvSale(store, venda) {
+  return registerSale(store, { ...venda, source: venda?.source || "pdvplus" });
+}
+
+export function gerarListaCompras(store) {
+  return buildListaCompras(store.products || []);
+}
+
+export function financeSnapshot(store, from, to) {
+  refreshDespesas(store);
+  return {
+    cashFlow: (store.cashFlow || []).slice(0, 80),
+    expenses: store.expenses || [],
+    dre: computeDre(store, from, to),
+    financeiro: store.settings?.financeiro || defaultFinanceiro
+  };
+}
+
+export function reverseSaleStock(store, sale) {
+  if (!sale || sale.estornada) return sale;
+  for (const line of sale.items || []) {
+    const product = store.products.find((item) => item.id === line.productId);
+    if (!product) continue;
+    devolverEstoqueProduto(product, line.qty);
+  }
+  for (const rec of sale.consumed || []) {
+    const ingredient = store.ingredients.find((item) => item.id === rec.ingredientId);
+    if (!ingredient) continue;
+    ingredient.stock = roundQty(Number(ingredient.stock || 0) + Number(rec.qty || 0));
+  }
+  sale.estornada = true;
+  estornarEntradaCaixa(store, sale.id);
+  rebuildPdvStock(store);
+  rebuildShoppingList(store);
+  return sale;
+}
+
+export {
+  roundMoney,
+  roundQty,
+  availableUnits,
+  uid,
+  targetOf,
+  computeDre,
+  upsertDespesa,
+  pagarDespesa,
+  refreshDespesas,
+  estornarEntradaCaixa
+};

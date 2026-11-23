@@ -1,4 +1,21 @@
 import { ingredients, products, defaultSettings, users } from "./data/catalog.js";
+import {
+  normalizeProduto,
+  baixarEstoqueProduto,
+  devolverEstoqueProduto,
+  gerarListaCompras,
+  registrarSaidaHistorico
+} from "./modules/estoque/engine.js";
+import {
+  defaultFinanceiro,
+  criarEntradaCaixa,
+  estornarEntradaCaixa,
+  refreshDespesas,
+  computeDre,
+  upsertDespesa,
+  pagarDespesa,
+  defaultExpenses
+} from "./modules/financeiro/engine.js";
 
 const KEY = "picnic-local-store";
 
@@ -35,26 +52,43 @@ function seed() {
       active: item.active !== false
     })),
     products: clone(products).map((product) => ({
-      ...product,
+      ...normalizeProduto(product),
       priceOverride: null,
-      stockOverride: null,
+      stockOverride: product.estoque_atual ?? null,
       lastPdvPrice: product.price,
-      lastPdvStock: null
+      lastPdvStock: product.estoque_atual ?? null
     })),
     sales: [],
     purchases: [],
     movements: [],
     shoppingList: [],
+    cashFlow: [],
+    expenses: defaultExpenses(),
+    notes: [],
     settings: clone(defaultSettings),
     users: clone(users),
     pdvStock: {}
   };
 }
 
+function hydrate(store) {
+  store.settings = { ...clone(defaultSettings), ...(store.settings || {}) };
+  store.settings.financeiro = {
+    ...clone(defaultFinanceiro),
+    ...(store.settings.financeiro || {}),
+    taxas: { ...clone(defaultFinanceiro).taxas, ...(store.settings.financeiro?.taxas || {}) }
+  };
+  store.products = (store.products || []).map((product) => normalizeProduto(product));
+  store.cashFlow = store.cashFlow || [];
+  store.expenses = store.expenses?.length ? store.expenses : defaultExpenses();
+  store.notes = store.notes || [];
+  return store;
+}
+
 function load() {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) return hydrate(JSON.parse(raw));
   } catch {}
   const store = seed();
   rebuild(store);
@@ -146,8 +180,13 @@ function computedProducts(store) {
   const map = Object.fromEntries(store.ingredients.map((item) => [item.id, item]));
   return store.products.map((product) => {
     const recipeStock = availableUnits(product, map);
-    const liveStock = product.stockOverride != null ? Number(product.stockOverride) : store.pdvStock[product.id] ?? recipeStock;
-    const livePrice = product.priceOverride != null ? Number(product.priceOverride) : Number(product.price);
+    const liveStock =
+      product.estoque_atual != null
+        ? Number(product.estoque_atual)
+        : product.stockOverride != null
+          ? Number(product.stockOverride)
+          : store.pdvStock[product.id] ?? recipeStock;
+    const livePrice = product.priceOverride != null ? Number(product.priceOverride) : Number(product.preco_venda ?? product.price);
     const cost = roundMoney(
       (product.recipe || []).reduce((sum, item) => {
         const ing = map[item.ingredientId];
@@ -158,6 +197,13 @@ function computedProducts(store) {
       ...product,
       price: livePrice,
       available: Math.max(0, liveStock),
+      preco_custo: Number(product.preco_custo ?? cost),
+      preco_venda: livePrice,
+      estoque_atual: Math.max(0, liveStock),
+      estoque_minimo: Number(product.estoque_minimo ?? 4),
+      estoque_ideal: Number(product.estoque_ideal ?? 12),
+      fornecedor: product.fornecedor || "Sem fornecedor",
+      nome: product.nome || product.name,
       cost,
       margin: roundMoney(livePrice - cost),
       source: product.priceOverride != null || product.stockOverride != null ? "manual" : "pdvplus"
@@ -191,6 +237,11 @@ function snapshot() {
     sales: store.sales.slice(0, 40),
     purchases: store.purchases.slice(0, 20),
     movements: store.movements.slice(0, 30),
+    cashFlow: (store.cashFlow || []).slice(0, 80),
+    expenses: store.expenses || [],
+    dre: computeDre(store),
+    financeiro: store.settings?.financeiro,
+    listaCompras: gerarListaCompras(store.products || []),
     users: store.users.map((user) => ({ email: user.email, name: user.name, role: user.role }))
   };
 }
@@ -213,25 +264,42 @@ function registerSale(store, items) {
       prev.qty = roundQty(prev.qty + used);
       consumedMap.set(ingredient.id, prev);
     }
-    saleItems.push({ productId: product.id, sku: product.sku, name: product.name, qty, price: unitPrice, total: roundMoney(unitPrice * qty) });
+    baixarEstoqueProduto(product, qty);
+    registrarSaidaHistorico(store, { product, qty, saleId: "", at, note: `${product.name} x${qty}` });
+    const unitCost = Number(product.preco_custo ?? product.cost ?? 0);
+    saleItems.push({
+      productId: product.id,
+      sku: product.sku,
+      name: product.name,
+      qty,
+      price: unitPrice,
+      custo: unitCost,
+      cost: unitCost,
+      total: roundMoney(unitPrice * qty)
+    });
   }
   if (!saleItems.length) return null;
   const sale = {
     id: uid("sale"),
     at,
     source: "pdvplus",
+    paymentMethod: ["pix", "credito", "debito", "dinheiro"][Math.floor(Math.random() * 4)],
     items: saleItems,
     consumed: Array.from(consumedMap.values()),
-    total: roundMoney(saleItems.reduce((sum, item) => sum + item.total, 0))
+    total: roundMoney(saleItems.reduce((sum, item) => sum + item.total, 0)),
+    estornada: false
   };
   store.sales.unshift(sale);
   store.sales = store.sales.slice(0, 80);
+  store.cashFlow = store.cashFlow || [];
+  store.cashFlow.unshift(criarEntradaCaixa({ sale, metodo: sale.paymentMethod, settings: store.settings }));
   rebuild(store);
   save(store);
   return sale;
 }
 
 function json(path, options = {}) {
+  const fullPath = options.path || path;
   const method = (options.method || "GET").toUpperCase();
   const body = options.body ? (typeof options.body === "string" ? JSON.parse(options.body) : options.body) : {};
   const store = load();
@@ -364,6 +432,13 @@ function json(path, options = {}) {
   if (path === "/api/admin/settings") {
     if (body.shopping) store.settings.shopping = { ...store.settings.shopping, ...body.shopping };
     if (body.pdvAccount) store.settings.pdvAccount = { ...store.settings.pdvAccount, ...body.pdvAccount };
+    if (body.financeiro) {
+      store.settings.financeiro = {
+        ...store.settings.financeiro,
+        ...body.financeiro,
+        taxas: { ...(store.settings.financeiro?.taxas || {}), ...(body.financeiro.taxas || {}) }
+      };
+    }
     rebuild(store);
     save(store);
     return snapshot();
@@ -380,6 +455,11 @@ function json(path, options = {}) {
   if (path === "/api/admin/sales" && method === "POST") {
     const sale = registerSale(store, body.items);
     if (!sale) throw new Error("Informe ao menos um item válido.");
+    if (body.paymentMethod) {
+      sale.paymentMethod = body.paymentMethod;
+      const entry = (store.cashFlow || [])[0];
+      if (entry && entry.saleId === sale.id) entry.metodo = body.paymentMethod;
+    }
     return { sale, ...snapshot() };
   }
 
@@ -457,6 +537,106 @@ function json(path, options = {}) {
   if (path === "/api/admin/shopping/rebuild") {
     rebuild(store);
     save(store);
+    return snapshot();
+  }
+
+  if (path === "/api/estoque/produtos") return snapshot();
+
+  const estqMatch = path.match(/^\/api\/estoque\/produtos\/([^/]+)$/);
+  if (estqMatch && method === "PATCH") {
+    const product = store.products.find((item) => item.id === estqMatch[1]);
+    if (!product) throw new Error("Produto não encontrado.");
+    if (body.nome != null || body.name != null) {
+      product.nome = String(body.nome || body.name);
+      product.name = product.nome;
+    }
+    if (body.sku != null) product.sku = String(body.sku);
+    if (body.preco_custo !== undefined && body.preco_custo !== "") product.preco_custo = Number(body.preco_custo);
+    if (body.preco_venda !== undefined && body.preco_venda !== "") {
+      product.preco_venda = Number(body.preco_venda);
+      product.price = product.preco_venda;
+      product.priceOverride = product.preco_venda;
+    }
+    if (body.estoque_atual !== undefined && body.estoque_atual !== "") {
+      product.estoque_atual = Number(body.estoque_atual);
+      product.stockOverride = product.estoque_atual;
+    }
+    if (body.estoque_minimo !== undefined && body.estoque_minimo !== "") product.estoque_minimo = Number(body.estoque_minimo);
+    if (body.estoque_ideal !== undefined && body.estoque_ideal !== "") product.estoque_ideal = Number(body.estoque_ideal);
+    if (body.fornecedor != null) product.fornecedor = String(body.fornecedor);
+    rebuild(store);
+    save(store);
+    return snapshot();
+  }
+
+  if (path === "/api/estoque/compras") {
+    rebuild(store);
+    save(store);
+    return snapshot();
+  }
+
+  if ((path === "/api/financeiro" || String(fullPath).startsWith("/api/financeiro?")) && method === "GET") {
+    refreshDespesas(store);
+    const raw = String(fullPath);
+    const qs = raw.includes("?") ? raw.slice(raw.indexOf("?") + 1) : "";
+    const params = new URLSearchParams(qs);
+    const dre = computeDre(store, params.get("from"), params.get("to"));
+    return { ...snapshot(), dre };
+  }
+
+  if (path === "/api/financeiro/taxas" && method === "PATCH") {
+    store.settings.financeiro = {
+      ...store.settings.financeiro,
+      ...body,
+      taxas: { ...(store.settings.financeiro?.taxas || {}), ...(body.taxas || {}) }
+    };
+    save(store);
+    return snapshot();
+  }
+
+  if (path === "/api/financeiro/despesas" && method === "POST") {
+    const item = upsertDespesa(store, body);
+    save(store);
+    return { expense: item, ...snapshot() };
+  }
+
+  const despMatch = path.match(/^\/api\/financeiro\/despesas\/([^/]+)(?:\/(pagar|remover))?$/);
+  if (despMatch) {
+    if (despMatch[2] === "remover") {
+      store.expenses = (store.expenses || []).filter((row) => row.id !== despMatch[1]);
+      save(store);
+      return snapshot();
+    }
+    if (despMatch[2] === "pagar") {
+      const item = pagarDespesa(store, despMatch[1]);
+      if (!item) throw new Error("Despesa não encontrada.");
+      save(store);
+      return { expense: item, ...snapshot() };
+    }
+    const item = upsertDespesa(store, body, despMatch[1]);
+    if (!item) throw new Error("Despesa não encontrada.");
+    save(store);
+    return { expense: item, ...snapshot() };
+  }
+
+  const estornoMatch = path.match(/^\/api\/financeiro\/vendas\/([^/]+)\/estornar$/);
+  if (estornoMatch && method === "POST") {
+    const sale = store.sales.find((item) => item.id === estornoMatch[1]);
+    if (!sale) throw new Error("Venda não encontrada.");
+    if (!sale.estornada) {
+      for (const line of sale.items || []) {
+        const product = store.products.find((item) => item.id === line.productId);
+        if (product) devolverEstoqueProduto(product, line.qty);
+      }
+      for (const rec of sale.consumed || []) {
+        const ingredient = store.ingredients.find((item) => item.id === rec.ingredientId);
+        if (ingredient) ingredient.stock = roundQty(Number(ingredient.stock || 0) + Number(rec.qty || 0));
+      }
+      sale.estornada = true;
+      estornarEntradaCaixa(store, sale.id);
+      rebuild(store);
+      save(store);
+    }
     return snapshot();
   }
 

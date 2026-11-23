@@ -68,16 +68,27 @@ const quente = [r("ing-copo-quente", 1), r("ing-tampa", 1), r("ing-guardanapo", 
 const prato = [r("ing-prato", 1), r("ing-guardanapo", 1)];
 const pote = [r("ing-pote", 1), r("ing-colher", 1), r("ing-guardanapo", 1)];
 
-function product(id, sku, name, price, category, recipe) {
+function product(id, sku, name, price, category, recipe, extra = {}) {
+  const estoque_minimo = extra.estoque_minimo ?? 4;
+  const estoque_ideal = extra.estoque_ideal ?? 12;
+  const hash = id.split("").reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+  const fornecedores = ["Central PIC NIC", "Atacado", "Feira", "Distribuidora", "Padaria Central"];
   return {
     id,
     sku,
     name,
+    nome: name,
     price,
+    preco_venda: price,
+    preco_custo: extra.preco_custo ?? Math.round(price * 0.42 * 100) / 100,
     category,
     active: true,
     recipe,
-    origin: "pdvplus"
+    origin: "pdvplus",
+    estoque_atual: extra.estoque_atual ?? (hash % 5 === 0 ? 2 : hash % 5 === 1 ? 4 : 18),
+    estoque_minimo,
+    estoque_ideal,
+    fornecedor: extra.fornecedor || fornecedores[hash % fornecedores.length]
   };
 }
 
@@ -157,6 +168,10 @@ export const defaultSettings = {
     lastTestAt: null,
     lastError: "",
     lastSyncAt: null
+  },
+  financeiro: {
+    taxas: { pix: 0, credito: 3.49, debito: 1.99, dinheiro: 0 },
+    impostoPercent: 6
   }
 };
 

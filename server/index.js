@@ -13,9 +13,16 @@ import {
   shoppingSummary,
   uid,
   roundQty,
-  roundMoney
+  roundMoney,
+  handlePdvSale,
+  gerarListaCompras,
+  financeSnapshot,
+  reverseSaleStock,
+  upsertDespesa,
+  pagarDespesa
 } from "./store.js";
 import { simulatePdvCatalog, applyPdvSync, simulatePdvSale } from "./pdv.js";
+import { normalizarVenda } from "../src/services/pdvPlus.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -40,6 +47,13 @@ function publicProduct(product) {
 function adminProduct(product) {
   return {
     ...publicProduct(product),
+    nome: product.nome || product.name,
+    preco_custo: product.preco_custo,
+    preco_venda: product.preco_venda ?? product.price,
+    estoque_atual: product.estoque_atual ?? product.available,
+    estoque_minimo: product.estoque_minimo,
+    estoque_ideal: product.estoque_ideal,
+    fornecedor: product.fornecedor,
     priceOverride: product.priceOverride,
     stockOverride: product.stockOverride,
     lastPdvPrice: product.lastPdvPrice,
@@ -63,6 +77,11 @@ function snapshot() {
     sales: store.sales.slice(0, 40),
     purchases: store.purchases.slice(0, 20),
     movements: store.movements.slice(0, 30),
+    cashFlow: (store.cashFlow || []).slice(0, 80),
+    expenses: store.expenses || [],
+    dre: financeSnapshot(store).dre,
+    financeiro: store.settings?.financeiro,
+    listaCompras: gerarListaCompras(store),
     users: store.users.map((user) => ({
       email: user.email,
       name: user.name,
@@ -337,6 +356,16 @@ async function start() {
     if (body.pdvAccount) {
       store.settings.pdvAccount = { ...store.settings.pdvAccount, ...body.pdvAccount };
     }
+    if (body.financeiro) {
+      store.settings.financeiro = {
+        ...store.settings.financeiro,
+        ...body.financeiro,
+        taxas: {
+          ...(store.settings.financeiro?.taxas || {}),
+          ...(body.financeiro.taxas || {})
+        }
+      };
+    }
     rebuildShoppingList(store);
     saveStore(store);
     broadcast("settings");
@@ -455,11 +484,115 @@ async function start() {
     if (secret !== store.settings.pdvWebhookSecret) {
       return res.status(401).json({ error: "Segredo inválido." });
     }
-    const sale = registerSale(store, { ...req.body, source: "pdvplus" });
+    const sale = handlePdvSale(store, { ...normalizarVenda(req.body), source: "pdvplus" });
     if (!sale) return res.status(400).json({ error: "Nenhum item reconhecido." });
     saveStore(store);
     broadcast("sale", { lastSale: sale });
     res.json({ ok: true, sale, syncedAt: store.settings.pdvAccount.lastSyncAt });
+  });
+
+  app.get("/api/estoque/produtos", requireAdmin, (_req, res) => {
+    res.json(snapshot());
+  });
+
+  app.patch("/api/estoque/produtos/:id", requireAdmin, (req, res) => {
+    const store = loadStore();
+    const product = store.products.find((item) => item.id === req.params.id);
+    if (!product) return res.status(404).json({ error: "Produto não encontrado." });
+    const body = req.body || {};
+    if (body.nome != null || body.name != null) {
+      product.nome = String(body.nome || body.name);
+      product.name = product.nome;
+    }
+    if (body.sku != null) product.sku = String(body.sku);
+    if (body.preco_custo !== undefined && body.preco_custo !== "") product.preco_custo = Number(body.preco_custo);
+    if (body.preco_venda !== undefined && body.preco_venda !== "") {
+      product.preco_venda = Number(body.preco_venda);
+      product.price = product.preco_venda;
+      product.priceOverride = product.preco_venda;
+    }
+    if (body.estoque_atual !== undefined && body.estoque_atual !== "") {
+      product.estoque_atual = Number(body.estoque_atual);
+      product.stockOverride = product.estoque_atual;
+    }
+    if (body.estoque_minimo !== undefined && body.estoque_minimo !== "") product.estoque_minimo = Number(body.estoque_minimo);
+    if (body.estoque_ideal !== undefined && body.estoque_ideal !== "") product.estoque_ideal = Number(body.estoque_ideal);
+    if (body.fornecedor != null) product.fornecedor = String(body.fornecedor);
+    rebuildPdvStock(store);
+    rebuildShoppingList(store);
+    saveStore(store);
+    broadcast("products");
+    res.json(snapshot());
+  });
+
+  app.get("/api/estoque/compras", requireAdmin, (_req, res) => {
+    const store = loadStore();
+    res.json({ listaCompras: gerarListaCompras(store), ...snapshot() });
+  });
+
+  app.get("/api/financeiro", requireAdmin, (req, res) => {
+    const store = loadStore();
+    const data = financeSnapshot(store, req.query.from, req.query.to);
+    res.json({ ...snapshot(), ...data, dre: data.dre });
+  });
+
+  app.patch("/api/financeiro/taxas", requireAdmin, (req, res) => {
+    const store = loadStore();
+    store.settings.financeiro = {
+      ...store.settings.financeiro,
+      ...(req.body || {}),
+      taxas: {
+        ...(store.settings.financeiro?.taxas || {}),
+        ...(req.body?.taxas || {})
+      }
+    };
+    saveStore(store);
+    broadcast("settings");
+    res.json(snapshot());
+  });
+
+  app.post("/api/financeiro/despesas", requireAdmin, (req, res) => {
+    const store = loadStore();
+    const item = upsertDespesa(store, req.body || {});
+    saveStore(store);
+    broadcast("settings");
+    res.json({ expense: item, ...snapshot() });
+  });
+
+  app.patch("/api/financeiro/despesas/:id", requireAdmin, (req, res) => {
+    const store = loadStore();
+    const item = upsertDespesa(store, req.body || {}, req.params.id);
+    if (!item) return res.status(404).json({ error: "Despesa não encontrada." });
+    saveStore(store);
+    broadcast("settings");
+    res.json({ expense: item, ...snapshot() });
+  });
+
+  app.post("/api/financeiro/despesas/:id/pagar", requireAdmin, (req, res) => {
+    const store = loadStore();
+    const item = pagarDespesa(store, req.params.id);
+    if (!item) return res.status(404).json({ error: "Despesa não encontrada." });
+    saveStore(store);
+    broadcast("settings");
+    res.json({ expense: item, ...snapshot() });
+  });
+
+  app.post("/api/financeiro/despesas/:id/remover", requireAdmin, (req, res) => {
+    const store = loadStore();
+    store.expenses = (store.expenses || []).filter((row) => row.id !== req.params.id);
+    saveStore(store);
+    broadcast("settings");
+    res.json(snapshot());
+  });
+
+  app.post("/api/financeiro/vendas/:id/estornar", requireAdmin, (req, res) => {
+    const store = loadStore();
+    const sale = store.sales.find((item) => item.id === req.params.id);
+    if (!sale) return res.status(404).json({ error: "Venda não encontrada." });
+    reverseSaleStock(store, sale);
+    saveStore(store);
+    broadcast("sale");
+    res.json(snapshot());
   });
 
   app.post("/api/pdv/webhook", (req, res) => {
@@ -472,7 +605,7 @@ async function start() {
     if (Array.isArray(sales) && sales.length) {
       const applied = [];
       for (const sale of sales) {
-        const result = registerSale(store, { ...sale, source: "pdvplus" });
+        const result = handlePdvSale(store, { ...normalizarVenda(sale), source: "pdvplus" });
         if (result) applied.push(result);
       }
       saveStore(store);

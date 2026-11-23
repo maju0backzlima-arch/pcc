@@ -4,6 +4,8 @@ import { api, getToken, setToken } from "./api.js";
 import Home from "./pages/Home.jsx";
 import Login from "./pages/Login.jsx";
 import Admin from "./pages/Admin.jsx";
+import Estoque from "./pages/Estoque.jsx";
+import Financeiro from "./pages/Financeiro.jsx";
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -57,6 +59,8 @@ export default function App() {
           {user ? (
             <>
               <NavLink to="/admin">Central da equipe</NavLink>
+              <NavLink to="/estoque">Estoque</NavLink>
+              <NavLink to="/financeiro">Financeiro</NavLink>
               <button className="linkish" onClick={logout}>
                 Sair
               </button>
@@ -70,6 +74,8 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login onLogin={setUser} />} />
         <Route path="/admin" element={<Admin user={user} />} />
+        <Route path="/estoque" element={<Estoque user={user} />} />
+        <Route path="/financeiro" element={<Financeiro user={user} />} />
       </Routes>
       <footer className="foot">
         <span>PIC NIC · uso interno da equipe</span>

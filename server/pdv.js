@@ -59,8 +59,10 @@ export function simulatePdvSale(store) {
   const product = pickWeighted(live);
   if (!product) return null;
   const qty = Math.random() > 0.72 ? 2 : 1;
+  const metodos = ["pix", "credito", "debito", "dinheiro"];
   return registerSale(store, {
     source: "pdvplus",
+    paymentMethod: metodos[Math.floor(Math.random() * metodos.length)],
     note: "Venda automática do PDV+",
     items: [{ productId: product.id, qty }]
   });

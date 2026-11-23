@@ -28,13 +28,14 @@ function looksLikeHtml(text, res) {
 }
 
 function ourApi(data) {
-  return data && (Array.isArray(data.products) || data.token || data.user || data.ok || data.sync || data.shoppingList);
+  return data && (Array.isArray(data.products) || data.token || data.user || data.ok || data.sync || data.shoppingList || data.dre || data.listaCompras || data.cashFlow || data.expenses);
 }
 
 let mode = staticHost() ? "local" : "auto";
 
 async function request(path, options = {}) {
-  if (mode === "local") return localApi.request(path, options);
+  const pathname = String(path || "").split("?")[0];
+  if (mode === "local") return localApi.request(pathname, { ...options, path });
 
   const headers = { Accept: "application/json", ...(options.headers || {}) };
   if (options.body && !(options.body instanceof FormData)) {
@@ -48,19 +49,19 @@ async function request(path, options = {}) {
     const text = await res.text();
     if (looksLikeHtml(text, res)) {
       mode = "local";
-      return localApi.request(path, options);
+      return localApi.request(pathname, { ...options, path });
     }
     let data = {};
     try {
       data = text ? JSON.parse(text) : {};
     } catch {
       mode = "local";
-      return localApi.request(path, options);
+      return localApi.request(pathname, { ...options, path });
     }
     if (!res.ok) {
       if (!ourApi(data)) {
         mode = "local";
-        return localApi.request(path, options);
+        return localApi.request(pathname, { ...options, path });
       }
       throw new Error(errorMessage(data.error || data));
     }
@@ -68,7 +69,7 @@ async function request(path, options = {}) {
   } catch (err) {
     if (err instanceof TypeError || err?.message === "Failed to fetch") {
       mode = "local";
-      return localApi.request(path, options);
+      return localApi.request(pathname, { ...options, path });
     }
     throw new Error(errorMessage(err));
   }
@@ -108,5 +109,25 @@ export const api = {
     request(`/api/admin/shopping/${id}/remove`, { method: "POST" }),
   rebuildShopping: () => request("/api/admin/shopping/rebuild", { method: "POST" }),
   streamUrl: () => `/api/admin/stream?token=${encodeURIComponent(getToken())}`,
-  localTick: () => localApi.simulateSale()
+  localTick: () => localApi.simulateSale(),
+  estoqueProdutos: () => request("/api/estoque/produtos"),
+  updateEstoqueProduto: (id, payload) =>
+    request(`/api/estoque/produtos/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  listaCompras: () => request("/api/estoque/compras"),
+  financeiro: (from, to) => {
+    const q = new URLSearchParams();
+    if (from) q.set("from", from);
+    if (to) q.set("to", to);
+    const suffix = q.toString() ? `?${q}` : "";
+    return request(`/api/financeiro${suffix}`);
+  },
+  updateTaxas: (payload) =>
+    request("/api/financeiro/taxas", { method: "PATCH", body: JSON.stringify(payload) }),
+  createDespesa: (payload) =>
+    request("/api/financeiro/despesas", { method: "POST", body: JSON.stringify(payload) }),
+  updateDespesa: (id, payload) =>
+    request(`/api/financeiro/despesas/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  pagarDespesa: (id) => request(`/api/financeiro/despesas/${id}/pagar`, { method: "POST" }),
+  removeDespesa: (id) => request(`/api/financeiro/despesas/${id}/remover`, { method: "POST" }),
+  estornarVenda: (id) => request(`/api/financeiro/vendas/${id}/estornar`, { method: "POST" })
 };
