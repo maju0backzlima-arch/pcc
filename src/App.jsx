@@ -115,6 +115,13 @@ export default function App() {
     { to: "/ajuda", label: "Manual", icon: BookOpen }
   ].filter(Boolean);
 
+  const bottomLinks = [
+    { to: "/admin", label: "Dashboard", icon: LayoutDashboard },
+    { to: "/estoque", label: "Estoque", icon: NotebookPen },
+    { to: "/financeiro", label: canSeeDre(user) ? "Financeiro" : "Caixa", icon: Wallet },
+    { to: "/notas", label: "Notas", icon: Receipt }
+  ];
+
   return (
     <ToastProvider>
       <div className="shell">
@@ -181,6 +188,17 @@ export default function App() {
             <Route path="/ajuda" element={<Ajuda />} />
           </Routes>
         </div>
+        <nav className="bottom-nav">
+          {bottomLinks.map((item) => {
+            const Icon = item.icon;
+            return (
+              <NavLink key={item.to} to={item.to}>
+                <Icon size={22} strokeWidth={1.8} />
+                <span>{item.label}</span>
+              </NavLink>
+            );
+          })}
+        </nav>
       </div>
     </ToastProvider>
   );

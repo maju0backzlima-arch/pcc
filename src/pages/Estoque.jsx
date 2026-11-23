@@ -177,7 +177,37 @@ export default function Estoque({ user, search = "" }) {
                 <Chip active={filter === "critico"} onClick={() => setFilter("critico")}>Estoque crítico</Chip>
                 <Chip active={filter === "vencendo"} onClick={() => setFilter("vencendo")}>Vencendo em 3 dias</Chip>
               </div>
-              <div className="admin-table-wrap">
+              <div className="mobile-cards">
+                {insumos.map((item) => {
+                  const atual = Number(item.estoque_atual ?? item.stock);
+                  const min = Number(item.estoque_minimo ?? item.minStock);
+                  const pct = min > 0 ? Math.min(100, (atual / Number(item.estoque_ideal || min * 2 || 1)) * 100) : 100;
+                  return (
+                    <article key={item.id} className={`m-card ${highlightId === item.id || atual <= min ? "cmv-alerta" : ""}`}>
+                      <div className="m-card-head">
+                        <div>
+                          <InlineCell value={item.nome || item.name} onSave={(v) => patchIng(item.id, { name: v, nome: v })} />
+                          <div className="stock-bar"><i style={{ width: `${pct}%` }} /></div>
+                        </div>
+                        <div className="row-actions">
+                          <DupBtn onClick={() => duplicarIng(item.id)} />
+                          <ConfirmDel onConfirm={() => run(() => api.deleteIngredient(item.id), "Insumo excluído")} />
+                        </div>
+                      </div>
+                      <div className="m-card-grid">
+                        <div className="m-meta">Un. <b><InlineCell value={item.unidade || item.unit} onSave={(v) => patchIng(item.id, { unit: v, unidade: v })} /></b></div>
+                        <div className={`m-meta ${atual <= min ? "err" : ""}`}>Atual <b><InlineCell type="number" inputMode="decimal" step="0.01" value={atual} format={(v) => qty(v)} onSave={(v) => patchIng(item.id, { stock: v, estoque_atual: v })} /></b></div>
+                        <div className="m-meta">Mín. <b><InlineCell type="number" inputMode="decimal" step="0.01" value={min} format={(v) => qty(v)} onSave={(v) => patchIng(item.id, { minStock: v, estoque_minimo: v })} /></b></div>
+                        <div className="m-meta">Ideal <b><InlineCell type="number" inputMode="decimal" step="0.01" value={item.estoque_ideal ?? item.targetStock} format={(v) => qty(v)} onSave={(v) => patchIng(item.id, { targetStock: v, estoque_ideal: v })} /></b></div>
+                        <div className="m-meta">Custo <b><InlineCell type="number" inputMode="decimal" step="0.001" value={item.custo_unitario ?? item.costPerUnit} format={(v) => money(v)} onSave={(v) => patchIng(item.id, { costPerUnit: v, custo_unitario: v })} /></b></div>
+                        <div className="m-meta">Validade <b><InlineCell type="date" value={item.validade || ""} format={(v) => v || "—"} onSave={(v) => patchIng(item.id, { validade: v })} /></b></div>
+                        <div className="m-meta full">Fornecedor <FornecedorSelect value={item.fornecedorId || item.fornecedor || item.supplier} list={fornecedores} onSave={(v) => patchIng(item.id, { fornecedorId: v })} /></div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+              <div className="admin-table-wrap desk-only">
                 <table className="admin-table">
                   <thead>
                     <tr>
@@ -207,16 +237,16 @@ export default function Estoque({ user, search = "" }) {
                             <InlineCell value={item.unidade || item.unit} onSave={(v) => patchIng(item.id, { unit: v, unidade: v })} />
                           </td>
                           <td className={atual <= min ? "err" : ""}>
-                            <InlineCell type="number" step="0.01" value={atual} format={(v) => qty(v)} onSave={(v) => patchIng(item.id, { stock: v, estoque_atual: v })} />
+                            <InlineCell type="number" inputMode="decimal" step="0.01" value={atual} format={(v) => qty(v)} onSave={(v) => patchIng(item.id, { stock: v, estoque_atual: v })} />
                           </td>
                           <td>
-                            <InlineCell type="number" step="0.01" value={min} format={(v) => qty(v)} onSave={(v) => patchIng(item.id, { minStock: v, estoque_minimo: v })} />
+                            <InlineCell type="number" inputMode="decimal" step="0.01" value={min} format={(v) => qty(v)} onSave={(v) => patchIng(item.id, { minStock: v, estoque_minimo: v })} />
                           </td>
                           <td>
-                            <InlineCell type="number" step="0.01" value={item.estoque_ideal ?? item.targetStock} format={(v) => qty(v)} onSave={(v) => patchIng(item.id, { targetStock: v, estoque_ideal: v })} />
+                            <InlineCell type="number" inputMode="decimal" step="0.01" value={item.estoque_ideal ?? item.targetStock} format={(v) => qty(v)} onSave={(v) => patchIng(item.id, { targetStock: v, estoque_ideal: v })} />
                           </td>
                           <td>
-                            <InlineCell type="number" step="0.001" value={item.custo_unitario ?? item.costPerUnit} format={(v) => money(v)} onSave={(v) => patchIng(item.id, { costPerUnit: v, custo_unitario: v })} />
+                            <InlineCell type="number" inputMode="decimal" step="0.001" value={item.custo_unitario ?? item.costPerUnit} format={(v) => money(v)} onSave={(v) => patchIng(item.id, { costPerUnit: v, custo_unitario: v })} />
                           </td>
                           <td>
                             <InlineCell type="date" value={item.validade || ""} format={(v) => v || "—"} onSave={(v) => patchIng(item.id, { validade: v })} />
@@ -269,7 +299,7 @@ export default function Estoque({ user, search = "" }) {
                       </div>
                     </div>
                     <InlineCell value={product.nome || product.name} onSave={(v) => patchProd(product.id, { name: v, nome: v })} />
-                    <InlineCell type="number" step="0.01" value={product.preco_venda ?? product.price} format={(v) => money(v)} onSave={(v) => patchProd(product.id, { preco_venda: v, price: v })} />
+                    <InlineCell type="number" inputMode="decimal" step="0.01" value={product.preco_venda ?? product.price} format={(v) => money(v)} onSave={(v) => patchProd(product.id, { preco_venda: v, price: v })} />
                     <p>
                       <span className={`pill cmv-pill ${cmv.alerta ? "alerta" : ""}`}>
                         CMV <Count value={cmv.cmv} money /> · <Count value={cmv.percent} digits={1} />%
@@ -299,7 +329,7 @@ export default function Estoque({ user, search = "" }) {
                                 ))}
                               </select>
                               <InlineCell
-                                type="number"
+                                type="number" inputMode="decimal"
                                 step="0.01"
                                 value={row.quantidade_usada ?? row.qty}
                                 format={(v) => qty(v)}
@@ -361,7 +391,7 @@ export default function Estoque({ user, search = "" }) {
                         <td><InlineCell value={item.name} onSave={(v) => run(() => api.updateFornecedor(item.id, { name: v }), "Salvo")} /></td>
                         <td><InlineCell value={item.whatsapp || ""} format={(v) => v || "—"} onSave={(v) => run(() => api.updateFornecedor(item.id, { whatsapp: v }), "Salvo")} /></td>
                         <td><InlineCell value={item.categoria || ""} onSave={(v) => run(() => api.updateFornecedor(item.id, { categoria: v }), "Salvo")} /></td>
-                        <td><InlineCell type="number" value={item.prazoDias} format={(v) => `${v}d`} onSave={(v) => run(() => api.updateFornecedor(item.id, { prazoDias: v }), "Salvo")} /></td>
+                        <td><InlineCell type="number" inputMode="decimal" value={item.prazoDias} format={(v) => `${v}d`} onSave={(v) => run(() => api.updateFornecedor(item.id, { prazoDias: v }), "Salvo")} /></td>
                         <td>{usados.length}</td>
                         <td />
                       </tr>
@@ -390,7 +420,7 @@ export default function Estoque({ user, search = "" }) {
                   </label>
                   <label>
                     Quantidade
-                    <input type="number" min="0" step="0.01" value={perda.qty} onChange={(e) => setPerda({ ...perda, qty: e.target.value })} />
+                    <input type="number" inputMode="decimal" min="0" step="0.01" value={perda.qty} onChange={(e) => setPerda({ ...perda, qty: e.target.value })} />
                   </label>
                   <label>
                     Motivo
@@ -539,7 +569,7 @@ export default function Estoque({ user, search = "" }) {
           </label>
           <label>
             Quantidade
-            <input type="number" min="0" step="0.01" value={perda.qty} onChange={(e) => setPerda({ ...perda, qty: e.target.value })} />
+            <input type="number" inputMode="decimal" min="0" step="0.01" value={perda.qty} onChange={(e) => setPerda({ ...perda, qty: e.target.value })} />
           </label>
           <label>
             Motivo
@@ -570,7 +600,7 @@ export default function Estoque({ user, search = "" }) {
           <label>Nome<input value={fornDraft.name} onChange={(e) => setFornDraft({ ...fornDraft, name: e.target.value })} /></label>
           <label>WhatsApp<input value={fornDraft.whatsapp} onChange={(e) => setFornDraft({ ...fornDraft, whatsapp: e.target.value })} /></label>
           <label>Categoria<input value={fornDraft.categoria} onChange={(e) => setFornDraft({ ...fornDraft, categoria: e.target.value })} /></label>
-          <label>Prazo (dias)<input type="number" min="0" value={fornDraft.prazoDias} onChange={(e) => setFornDraft({ ...fornDraft, prazoDias: e.target.value })} /></label>
+          <label>Prazo (dias)<input type="number" inputMode="decimal" min="0" value={fornDraft.prazoDias} onChange={(e) => setFornDraft({ ...fornDraft, prazoDias: e.target.value })} /></label>
           <Btn
             className="btn-primary"
             disabled={busy || !fornDraft.name}

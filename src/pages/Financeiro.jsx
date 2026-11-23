@@ -333,7 +333,7 @@ export default function Financeiro({ user, search = "" }) {
                     {METODOS.map((m) => <option key={m} value={m}>{METODO_LABEL[m]}</option>)}
                   </select>
                 </label>
-                <label>Valor<input type="number" min="0" step="0.01" value={manual.amount} onChange={(e) => setManual({ ...manual, amount: e.target.value })} /></label>
+                <label>Valor<input type="number" inputMode="decimal" min="0" step="0.01" value={manual.amount} onChange={(e) => setManual({ ...manual, amount: e.target.value })} /></label>
                 <label>Descrição<input value={manual.note} onChange={(e) => setManual({ ...manual, note: e.target.value })} /></label>
                 <Btn className="btn-primary" disabled={busy} onClick={() => run(() => api.lancarCaixa(manual), "Lançamento gravado.")}>Lançar</Btn>
               </div>
@@ -347,7 +347,7 @@ export default function Financeiro({ user, search = "" }) {
                     <option value="suprimento">Suprimento</option>
                   </select>
                 </label>
-                <label>Valor<input type="number" min="0" step="0.01" value={caixa.amount} onChange={(e) => setCaixa({ ...caixa, amount: e.target.value })} /></label>
+                <label>Valor<input type="number" inputMode="decimal" min="0" step="0.01" value={caixa.amount} onChange={(e) => setCaixa({ ...caixa, amount: e.target.value })} /></label>
                 <label>Motivo<input value={caixa.note} onChange={(e) => setCaixa({ ...caixa, note: e.target.value })} /></label>
                 <Btn className="btn-gold" disabled={busy} onClick={() => run(() => api.sangria(caixa), "Caixa atualizado.")}>Confirmar</Btn>
               </div>
@@ -398,7 +398,7 @@ export default function Financeiro({ user, search = "" }) {
                         <td>{money(sistema)}</td>
                         <td>
                           <input
-                            type="number"
+                            type="number" inputMode="decimal"
                             min="0"
                             step="0.01"
                             value={gaveta[m]}
@@ -457,12 +457,51 @@ export default function Financeiro({ user, search = "" }) {
                   <option value="variavel">Variável</option>
                 </select>
               </label>
-              <label>Valor<input type="number" min="0" step="0.01" value={nova.amount} onChange={(e) => setNova({ ...nova, amount: e.target.value })} /></label>
+              <label>Valor<input type="number" inputMode="decimal" min="0" step="0.01" value={nova.amount} onChange={(e) => setNova({ ...nova, amount: e.target.value })} /></label>
               <label>Vencimento<input type="date" value={nova.dueDate} onChange={(e) => setNova({ ...nova, dueDate: e.target.value })} /></label>
             </div>
             <Btn className="btn-primary" style={{ marginTop: 12 }} disabled={busy} onClick={() => run(() => api.createDespesa(nova), "Despesa lançada.")}>Lançar</Btn>
           </div>
           <div className="card">
+            <div className="mobile-cards">
+              {(dash.expenses || []).filter((item) => !search.trim() || String(item.name).toLowerCase().includes(search.trim().toLowerCase())).map((item) => (
+                <article key={item.id} className="m-card">
+                  <div className="m-card-head">
+                    <InlineCell value={item.name} onSave={(v) => run(() => api.updateDespesa(item.id, { name: v }), "Salvo")} />
+                    <div className="row-actions">
+                      {item.status !== "pago" ? <Btn className="btn-gold" disabled={busy} onClick={() => run(() => api.pagarDespesa(item.id), "Paga.")}>Pagar</Btn> : null}
+                      <Btn className="btn-ghost" disabled={busy} onClick={() => run(() => api.removeDespesa(item.id), "Removida.")}>Tirar</Btn>
+                    </div>
+                  </div>
+                  <div className="m-card-grid">
+                    <div className="m-meta">Categoria
+                      <QuickSelect
+                        value={item.category || "Fornecedores"}
+                        options={CATEGORIAS.map((cat) => ({ value: cat, label: cat }))}
+                        onSave={(v) => run(() => api.updateDespesa(item.id, { category: v }), "Salvo")}
+                      />
+                    </div>
+                    <div className="m-meta">Tipo
+                      <QuickSelect
+                        value={item.type || "variavel"}
+                        options={[{ value: "fixa", label: "Fixa" }, { value: "variavel", label: "Variável" }]}
+                        onSave={(v) => run(() => api.updateDespesa(item.id, { type: v }), "Salvo")}
+                      />
+                    </div>
+                    <div className="m-meta">Valor <b><InlineCell type="number" inputMode="decimal" step="0.01" value={item.amount} format={(v) => money(v)} onSave={(v) => run(() => api.updateDespesa(item.id, { amount: v }), "Salvo")} /></b></div>
+                    <div className="m-meta">Venc. <b><InlineCell type="date" value={item.dueDate || ""} format={(v) => v || "—"} onSave={(v) => run(() => api.updateDespesa(item.id, { dueDate: v }), "Salvo")} /></b></div>
+                    <div className="m-meta full">Status
+                      <QuickSelect
+                        value={item.status || "pendente"}
+                        options={[{ value: "pendente", label: "Pendente" }, { value: "pago", label: "Pago" }, { value: "atrasado", label: "Atrasado" }]}
+                        onSave={(v) => run(() => api.updateDespesa(item.id, { status: v }), "Salvo")}
+                      />
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+            <div className="admin-table-wrap desk-only">
             <table className="admin-table">
               <thead><tr><th>Nome</th><th>Categoria</th><th>Tipo</th><th>Valor</th><th>Venc.</th><th>Status</th><th></th></tr></thead>
               <tbody>
@@ -483,7 +522,7 @@ export default function Financeiro({ user, search = "" }) {
                         onSave={(v) => run(() => api.updateDespesa(item.id, { type: v }), "Salvo")}
                       />
                     </td>
-                    <td><InlineCell type="number" step="0.01" value={item.amount} format={(v) => money(v)} onSave={(v) => run(() => api.updateDespesa(item.id, { amount: v }), "Salvo")} /></td>
+                    <td><InlineCell type="number" inputMode="decimal" step="0.01" value={item.amount} format={(v) => money(v)} onSave={(v) => run(() => api.updateDespesa(item.id, { amount: v }), "Salvo")} /></td>
                     <td><InlineCell type="date" value={item.dueDate || ""} format={(v) => v || "—"} onSave={(v) => run(() => api.updateDespesa(item.id, { dueDate: v }), "Salvo")} /></td>
                     <td>
                       <QuickSelect
@@ -500,6 +539,7 @@ export default function Financeiro({ user, search = "" }) {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </>
       ) : null}
@@ -510,19 +550,41 @@ export default function Financeiro({ user, search = "" }) {
             <h3>Conta a receber</h3>
             <div className="form two">
               <label>Cliente / origem<input value={receber.name} onChange={(e) => setReceber({ ...receber, name: e.target.value })} /></label>
-              <label>Valor<input type="number" min="0" step="0.01" value={receber.amount} onChange={(e) => setReceber({ ...receber, amount: e.target.value })} /></label>
+              <label>Valor<input type="number" inputMode="decimal" min="0" step="0.01" value={receber.amount} onChange={(e) => setReceber({ ...receber, amount: e.target.value })} /></label>
               <label>Vencimento<input type="date" value={receber.dueDate} onChange={(e) => setReceber({ ...receber, dueDate: e.target.value })} /></label>
             </div>
             <Btn className="btn-primary" style={{ marginTop: 12 }} disabled={busy} onClick={() => run(() => api.createReceber(receber), "A receber lançado.")}>Lançar</Btn>
           </div>
           <div className="card">
+            <div className="mobile-cards">
+              {(dash.receivables || []).filter((item) => !search.trim() || String(item.name).toLowerCase().includes(search.trim().toLowerCase())).map((item) => (
+                <article key={item.id} className="m-card">
+                  <div className="m-card-head">
+                    <InlineCell value={item.name} onSave={(v) => run(() => api.updateReceber(item.id, { name: v }), "Salvo")} />
+                    {item.status !== "pago" ? <Btn className="btn-gold" disabled={busy} onClick={() => run(() => api.quitarReceber(item.id), "Recebido.")}>Quitar</Btn> : null}
+                  </div>
+                  <div className="m-card-grid">
+                    <div className="m-meta">Valor <b><InlineCell type="number" inputMode="decimal" step="0.01" value={item.amount} format={(v) => money(v)} onSave={(v) => run(() => api.updateReceber(item.id, { amount: v }), "Salvo")} /></b></div>
+                    <div className="m-meta">Venc. <b><InlineCell type="date" value={item.dueDate || ""} format={(v) => v || "—"} onSave={(v) => run(() => api.updateReceber(item.id, { dueDate: v }), "Salvo")} /></b></div>
+                    <div className="m-meta full">Status
+                      <QuickSelect
+                        value={item.status || "pendente"}
+                        options={[{ value: "pendente", label: "Pendente" }, { value: "pago", label: "Pago" }, { value: "atrasado", label: "Atrasado" }]}
+                        onSave={(v) => run(() => api.updateReceber(item.id, { status: v }), "Salvo")}
+                      />
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+            <div className="admin-table-wrap desk-only">
             <table className="admin-table">
               <thead><tr><th>Nome</th><th>Valor</th><th>Venc.</th><th>Status</th><th></th></tr></thead>
               <tbody>
                 {(dash.receivables || []).filter((item) => !search.trim() || String(item.name).toLowerCase().includes(search.trim().toLowerCase())).map((item) => (
                   <tr key={item.id}>
                     <td><InlineCell value={item.name} onSave={(v) => run(() => api.updateReceber(item.id, { name: v }), "Salvo")} /></td>
-                    <td><InlineCell type="number" step="0.01" value={item.amount} format={(v) => money(v)} onSave={(v) => run(() => api.updateReceber(item.id, { amount: v }), "Salvo")} /></td>
+                    <td><InlineCell type="number" inputMode="decimal" step="0.01" value={item.amount} format={(v) => money(v)} onSave={(v) => run(() => api.updateReceber(item.id, { amount: v }), "Salvo")} /></td>
                     <td><InlineCell type="date" value={item.dueDate || ""} format={(v) => v || "—"} onSave={(v) => run(() => api.updateReceber(item.id, { dueDate: v }), "Salvo")} /></td>
                     <td>
                       <QuickSelect
@@ -538,6 +600,7 @@ export default function Financeiro({ user, search = "" }) {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </>
       ) : null}
@@ -548,11 +611,11 @@ export default function Financeiro({ user, search = "" }) {
           <div className="form two">
             {METODOS.map((m) => (
               <label key={m}>{METODO_LABEL[m]} (%)
-                <input type="number" min="0" step="0.01" value={taxas[m] ?? 0} onChange={(e) => setTaxas({ ...taxas, [m]: e.target.value })} />
+                <input type="number" inputMode="decimal" min="0" step="0.01" value={taxas[m] ?? 0} onChange={(e) => setTaxas({ ...taxas, [m]: e.target.value })} />
               </label>
             ))}
             <label>Alíquota Simples Nacional (%)
-              <input type="number" min="0" step="0.1" value={imposto} onChange={(e) => setImposto(e.target.value)} />
+              <input type="number" inputMode="decimal" min="0" step="0.1" value={imposto} onChange={(e) => setImposto(e.target.value)} />
             </label>
           </div>
           <p className="muted" style={{ marginTop: 8 }}>Pix/débito/voucher D+1 · crédito D+30 · dinheiro na hora.</p>

@@ -438,7 +438,7 @@ export default function Admin({ user, search = "" }) {
               </label>
               <label>
                 Quantidade
-                <input type="number" min="0" value={newShop.buyQty} onChange={(e) => setNewShop({ ...newShop, buyQty: e.target.value })} />
+                <input type="number" inputMode="decimal" min="0" value={newShop.buyQty} onChange={(e) => setNewShop({ ...newShop, buyQty: e.target.value })} />
               </label>
               <label>
                 Unidade
@@ -507,7 +507,7 @@ export default function Admin({ user, search = "" }) {
                         <label>
                           Comprar
                           <input
-                            type="number"
+                            type="number" inputMode="decimal"
                             min="0"
                             value={edit.buyQty}
                             onChange={(e) => changeShop(item.id, { buyQty: e.target.value })}
@@ -584,19 +584,19 @@ export default function Admin({ user, search = "" }) {
               </label>
               <label>
                 Estoque atual
-                <input type="number" min="0" value={newIng.stock} onChange={(e) => setNewIng({ ...newIng, stock: e.target.value })} />
+                <input type="number" inputMode="decimal" min="0" value={newIng.stock} onChange={(e) => setNewIng({ ...newIng, stock: e.target.value })} />
               </label>
               <label>
                 Estoque mínimo
-                <input type="number" min="0" value={newIng.minStock} onChange={(e) => setNewIng({ ...newIng, minStock: e.target.value })} />
+                <input type="number" inputMode="decimal" min="0" value={newIng.minStock} onChange={(e) => setNewIng({ ...newIng, minStock: e.target.value })} />
               </label>
               <label>
                 Meta de compra
-                <input type="number" min="0" value={newIng.targetStock} onChange={(e) => setNewIng({ ...newIng, targetStock: e.target.value })} />
+                <input type="number" inputMode="decimal" min="0" value={newIng.targetStock} onChange={(e) => setNewIng({ ...newIng, targetStock: e.target.value })} />
               </label>
               <label>
                 Custo por unidade
-                <input type="number" min="0" step="0.001" value={newIng.costPerUnit} onChange={(e) => setNewIng({ ...newIng, costPerUnit: e.target.value })} />
+                <input type="number" inputMode="decimal" min="0" step="0.001" value={newIng.costPerUnit} onChange={(e) => setNewIng({ ...newIng, costPerUnit: e.target.value })} />
               </label>
               <label>
                 Categoria
@@ -650,7 +650,7 @@ export default function Admin({ user, search = "" }) {
                       </td>
                       <td>
                         <InlineCell
-                          type="number"
+                          type="number" inputMode="decimal"
                           value={item.stock}
                           onSave={(v) => run(() => api.updateIngredient(item.id, { stock: v }), "Estoque atualizado.", true)}
                         />
@@ -658,21 +658,21 @@ export default function Admin({ user, search = "" }) {
                       </td>
                       <td>
                         <InlineCell
-                          type="number"
+                          type="number" inputMode="decimal"
                           value={item.minStock}
                           onSave={(v) => run(() => api.updateIngredient(item.id, { minStock: v }), "Mínimo atualizado.", true)}
                         />
                       </td>
                       <td>
                         <InlineCell
-                          type="number"
+                          type="number" inputMode="decimal"
                           value={item.targetStock}
                           onSave={(v) => run(() => api.updateIngredient(item.id, { targetStock: v }), "Ideal atualizado.", true)}
                         />
                       </td>
                       <td>
                         <InlineCell
-                          type="number"
+                          type="number" inputMode="decimal"
                           step="0.001"
                           value={item.costPerUnit}
                           format={(v) => money(v)}
@@ -719,7 +719,7 @@ export default function Admin({ user, search = "" }) {
               </label>
               <label>
                 Preço
-                <input type="number" min="0" step="0.01" value={newProduct.price} onChange={(e) => setNewProduct({ ...newProduct, price: e.target.value })} />
+                <input type="number" inputMode="decimal" min="0" step="0.01" value={newProduct.price} onChange={(e) => setNewProduct({ ...newProduct, price: e.target.value })} />
               </label>
               <label>
                 Categoria
@@ -783,7 +783,7 @@ export default function Admin({ user, search = "" }) {
                         </td>
                         <td>
                           <InlineCell
-                            type="number"
+                            type="number" inputMode="decimal"
                             step="0.01"
                             value={draft.price}
                             format={(v) => money(v)}
@@ -806,7 +806,7 @@ export default function Admin({ user, search = "" }) {
                         </td>
                         <td>
                           <InlineCell
-                            type="number"
+                            type="number" inputMode="decimal"
                             value={draft.stock}
                             onSave={(v) => {
                               changeDraft(item.id, { stock: v });
@@ -868,7 +868,7 @@ export default function Admin({ user, search = "" }) {
                                     ))}
                                   </select>
                                   <input
-                                    type="number"
+                                    type="number" inputMode="decimal"
                                     min="0"
                                     step="0.01"
                                     value={row.qty}
@@ -933,7 +933,7 @@ export default function Admin({ user, search = "" }) {
               </label>
               <label>
                 Quantidade
-                <input type="number" min="1" value={salePick.qty} onChange={(e) => setSalePick({ ...salePick, qty: e.target.value })} />
+                <input type="number" inputMode="decimal" min="1" value={salePick.qty} onChange={(e) => setSalePick({ ...salePick, qty: e.target.value })} />
               </label>
               <Btn
                 className="btn-primary"
@@ -1035,7 +1035,7 @@ export default function Admin({ user, search = "" }) {
             <label>
               Meta de estoque (múltiplo do mínimo)
               <input
-                type="number"
+                type="number" inputMode="decimal"
                 min="1"
                 step="0.1"
                 value={shopSettings.targetMultiplier}

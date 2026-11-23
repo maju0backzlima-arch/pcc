@@ -149,8 +149,8 @@ export default function Fiscal({ user }) {
           {gerente ? (
             <div className="form" style={{ marginTop: 16 }}>
               <h3>Inutilizar numeração</h3>
-              <label>Inicial<input type="number" min="1" value={inut.numeroInicial} onChange={(e) => setInut({ ...inut, numeroInicial: e.target.value })} /></label>
-              <label>Final<input type="number" min="1" value={inut.numeroFinal} onChange={(e) => setInut({ ...inut, numeroFinal: e.target.value })} /></label>
+              <label>Inicial<input type="number" inputMode="decimal" min="1" value={inut.numeroInicial} onChange={(e) => setInut({ ...inut, numeroInicial: e.target.value })} /></label>
+              <label>Final<input type="number" inputMode="decimal" min="1" value={inut.numeroFinal} onChange={(e) => setInut({ ...inut, numeroFinal: e.target.value })} /></label>
               <label>Justificativa
                 <input value={inut.justificativa} onChange={(e) => setInut({ ...inut, justificativa: e.target.value })} placeholder="Mínimo 15 caracteres" />
               </label>
@@ -174,6 +174,39 @@ export default function Fiscal({ user }) {
             <input value={just} onChange={(e) => setJust(e.target.value)} placeholder="Mínimo 15 caracteres" />
           </label>
         ) : null}
+        <div className="mobile-cards">
+          {(dash.notas || []).map((nota) => (
+            <article key={nota.id} className={`m-card ${nota.status === "cancelada" ? "off-row" : ""}`}>
+              <div className="m-card-head">
+                <div>
+                  <div className="m-card-title">#{nota.status === "inutilizada" ? `${nota.numero}–${nota.numeroFinal}` : nota.numero}</div>
+                  <span className={`prio ${nota.status === "autorizada" ? "planejado" : nota.status === "cancelada" ? "urgente" : "atencao"}`}>
+                    {STATUS_NOTA[nota.status] || nota.status}
+                  </span>
+                </div>
+                <b className="tabular">{money(nota.total)}</b>
+              </div>
+              <div className="m-card-grid">
+                <div className="m-meta">Quando <b>{when(nota.at)}</b></div>
+                <div className="m-meta full muted">{nota.chave ? `${String(nota.chave).slice(0, 16)}…` : "—"}</div>
+              </div>
+              <div className="row">
+                {nota.xml ? <Btn className="btn-ghost" onClick={() => baixarXml(nota)}>XML</Btn> : null}
+                {nota.status === "autorizada" ? <Btn className="btn-ghost" onClick={() => baixarDanfe(nota)}>DANFE</Btn> : null}
+                {gerente && nota.status === "autorizada" ? (
+                  <Btn
+                    className="btn-gold"
+                    disabled={busy}
+                    onClick={() => run(() => api.cancelarNfce({ notaId: nota.id, justificativa: just }), "NFC-e cancelada. Caixa e estoque estornados.")}
+                  >
+                    Cancelar
+                  </Btn>
+                ) : null}
+              </div>
+            </article>
+          ))}
+        </div>
+        <div className="admin-table-wrap desk-only">
         <table className="admin-table">
           <thead>
             <tr>
@@ -214,6 +247,7 @@ export default function Fiscal({ user }) {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </main>
   );

@@ -134,6 +134,7 @@ export function InlineCell({ value, type = "text", step, format, onSave }) {
       className="inline-input tabular"
       type={type}
       step={step}
+      inputMode={type === "number" ? "decimal" : undefined}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
@@ -152,9 +153,9 @@ export function Modal({ open, title, onClose, children }) {
         <motion.div className="modal-back" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
           <motion.div
             className="modal-card"
-            initial={{ y: 24, opacity: 0, scale: 0.98 }}
+            initial={{ y: 80, opacity: 0, scale: 0.98 }}
             animate={{ y: 0, opacity: 1, scale: 1 }}
-            exit={{ y: 16, opacity: 0 }}
+            exit={{ y: 40, opacity: 0 }}
             transition={spring}
             onClick={(e) => e.stopPropagation()}
           >
