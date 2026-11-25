@@ -13,13 +13,13 @@ const CONTEUDO = {
         "Entre com seu e-mail e senha.",
         "Abra Financeiro → Conferência e confira o fundo de caixa do dia.",
         "Se faltar dinheiro, lance um suprimento em Caixa → Suprimento.",
-        "Confira se o PDV+ está sincronizado na Central da equipe."
+        "Abra o menu PDV e confira se os produtos do cardápio aparecem."
       ]
     },
     {
       title: "Fechamento de caixa",
       steps: [
-        "Some Pix, crédito, débito, voucher e dinheiro do PDV+.",
+        "Some Pix, crédito, débito, voucher e dinheiro do caixa PDV.",
         "Em Conferência, informe o valor da gaveta e da maquininha por método.",
         "Grave a conferência. Diferença aparece em vermelho.",
         "Faça a sangria do dinheiro físico (Caixa → Sangria).",

@@ -163,7 +163,7 @@ export const defaultSettings = {
     storeName: "PIC NIC Food Truck Café",
     token: "",
     autoSync: true,
-    simulateSales: true,
+    simulateSales: false,
     connected: false,
     lastTestAt: null,
     lastError: "",

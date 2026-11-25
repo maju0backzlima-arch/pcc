@@ -505,7 +505,7 @@ function json(path, options = {}) {
   }
 
   if (path === "/api/admin/sales" && method === "POST") {
-    const sale = registerSale(store, body.items, { paymentMethod: body.paymentMethod, note: body.note });
+    const sale = registerSale(store, body.items, { paymentMethod: body.paymentMethod, note: body.note, source: body.source || "pdvplus" });
     if (!sale) throw new Error("Informe ao menos um item válido.");
     return { sale, ...snapshot() };
   }
@@ -827,6 +827,7 @@ export const localApi = {
   snapshot,
   simulateSale() {
     const store = load();
+    if (store.settings?.pdvAccount?.simulateSales !== true) return null;
     const live = computedProducts(store).filter((item) => item.active !== false && item.price > 0 && item.available > 0);
     if (!live.length) return null;
     const product = live[Math.floor(Math.random() * live.length)];

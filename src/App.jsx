@@ -5,6 +5,7 @@ import {
   CircleHelp,
   LayoutDashboard,
   LogOut,
+  MonitorSmartphone,
   NotebookPen,
   Receipt,
   Search,
@@ -21,11 +22,13 @@ import Financeiro from "./pages/Financeiro.jsx";
 import Config from "./pages/Config.jsx";
 import Ajuda from "./pages/Ajuda.jsx";
 import Fiscal from "./pages/Fiscal.jsx";
+import Pdv from "./pages/Pdv.jsx";
 import { canManageEquipe, canSeeDre, isGerente, labelRole } from "./auth/permissoes.js";
 import { ToastProvider } from "./ui/ui.jsx";
 
 const TITLES = {
   "/": "Cardápio",
+  "/pdv": "PDV",
   "/admin": "Central da equipe",
   "/estoque": "Estoque",
   "/financeiro": "Financeiro",
@@ -107,6 +110,7 @@ export default function App() {
 
   const links = [
     { to: "/", end: true, label: "Cardápio", icon: ShoppingBag },
+    { to: "/pdv", label: "PDV", icon: MonitorSmartphone },
     { to: "/admin", label: "Central", icon: LayoutDashboard },
     { to: "/estoque", label: "Estoque", icon: NotebookPen },
     { to: "/financeiro", label: canSeeDre(user) ? "Financeiro" : "Caixa", icon: Wallet },
@@ -116,7 +120,7 @@ export default function App() {
   ].filter(Boolean);
 
   const bottomLinks = [
-    { to: "/admin", label: "Dashboard", icon: LayoutDashboard },
+    { to: "/pdv", label: "PDV", icon: MonitorSmartphone },
     { to: "/estoque", label: "Estoque", icon: NotebookPen },
     { to: "/financeiro", label: canSeeDre(user) ? "Financeiro" : "Caixa", icon: Wallet },
     { to: "/notas", label: "Notas", icon: Receipt }
@@ -179,6 +183,7 @@ export default function App() {
           </header>
           <Routes>
             <Route path="/" element={<Home search={search} />} />
+            <Route path="/pdv" element={<Pdv user={user} search={search} />} />
             <Route path="/login" element={<Login onLogin={setUser} />} />
             <Route path="/admin" element={<Admin user={user} search={search} />} />
             <Route path="/estoque" element={<Estoque user={user} search={search} />} />

@@ -102,7 +102,7 @@ export default function Admin({ user, search = "" }) {
     targetMultiplier: 2.5,
     soonFactor: 1.25
   });
-  const [pdvSettings, setPdvSettings] = useState({ autoSync: true, simulateSales: true });
+  const [pdvSettings, setPdvSettings] = useState({ autoSync: true, simulateSales: false });
   const [account, setAccount] = useState({ name: "", password: "" });
   const settingsReady = useRef(false);
   const draftsRef = useRef({});
@@ -148,7 +148,7 @@ export default function Admin({ user, search = "" }) {
       if (data.settings.pdvAccount) {
         setPdvSettings({
           autoSync: data.settings.pdvAccount.autoSync !== false,
-          simulateSales: data.settings.pdvAccount.simulateSales !== false
+          simulateSales: data.settings.pdvAccount.simulateSales === true
         });
       }
     }
@@ -1058,7 +1058,7 @@ export default function Admin({ user, search = "" }) {
                 checked={pdvSettings.simulateSales}
                 onChange={(e) => setPdvSettings({ ...pdvSettings, simulateSales: e.target.checked })}
               />
-              Simular vendas do caixa (útil para treinar a equipe)
+              Simular vendas sozinhas (treino). No dia a dia use o menu PDV.
             </label>
             <Btn className="btn-gold" style={{ marginTop: 8 }} disabled={busy} onClick={() => run(() => api.updateSettings({ pdvAccount: pdvSettings }), "Ajustes do PDV+ salvos.")}>
               Salvar PDV+

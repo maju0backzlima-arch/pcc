@@ -23,7 +23,7 @@ export default function Login({ onLogin }) {
       setSyncNote(
         `PDV+ sincronizado: ${data?.sync?.updated ?? data?.products?.length ?? 0} produtos com preço e estoque atualizados.`
       );
-      navigate("/admin");
+      navigate("/pdv");
     } catch (err) {
       setError(errorMessage(err));
     } finally {

@@ -925,7 +925,7 @@ async function start() {
       const store = loadStore();
       if (store.settings.pdvAccount.autoSync === false) return;
       let sale = null;
-      if (store.settings.pdvAccount.simulateSales !== false) {
+      if (store.settings.pdvAccount.simulateSales === true) {
         sale = simulatePdvSale(store);
       }
       if (!sale) {
