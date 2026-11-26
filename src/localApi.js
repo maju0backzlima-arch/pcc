@@ -273,14 +273,21 @@ function summary(store) {
   };
 }
 
+function publicSettings(settings) {
+  const pdvAccount = { ...(settings?.pdvAccount || {}) };
+  const hasPassword = Boolean(pdvAccount.password);
+  delete pdvAccount.password;
+  return { ...settings, pdvAccount: { ...pdvAccount, hasPassword } };
+}
+
 function snapshot() {
   const store = load();
   rebuild(store);
   const products = computedProducts(store);
   return {
     syncedAt: store.settings.pdvAccount.lastSyncAt,
-    connected: true,
-    settings: store.settings,
+    connected: Boolean(store.settings.pdvAccount.connected),
+    settings: publicSettings(store.settings),
     products,
     ingredients: store.ingredients,
     shoppingList: store.shoppingList,

@@ -19,12 +19,35 @@ export default function Pdv({ user, search = "" }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [last, setLast] = useState(null);
+  const [connected, setConnected] = useState(false);
+  const [hasPassword, setHasPassword] = useState(false);
+  const [conta, setConta] = useState({
+    email: "",
+    password: "",
+    cnpj: "",
+    storeName: "PIC NIC Food Truck Café",
+    token: ""
+  });
+
+  function applyAccount(data) {
+    const acc = data?.settings?.pdvAccount || {};
+    setConnected(Boolean(acc.connected || data?.connected));
+    setHasPassword(Boolean(acc.hasPassword || acc.password));
+    setConta((cur) => ({
+      email: acc.email || cur.email,
+      password: "",
+      cnpj: acc.cnpj || cur.cnpj,
+      storeName: acc.storeName || cur.storeName,
+      token: acc.token || cur.token
+    }));
+  }
 
   function load() {
     return api
-      .catalog()
+      .dashboard()
       .then((data) => {
         setCatalog(data);
+        applyAccount(data);
         setError("");
       })
       .catch((err) => setError(errorMessage(err)));
@@ -101,6 +124,84 @@ export default function Pdv({ user, search = "" }) {
       </div>
 
       {error ? <p className="err">{error}</p> : null}
+
+      <div className="card" style={{ marginBottom: 8 }}>
+        <h3>
+          <span className={`status-dot ${connected ? "on" : ""}`} />
+          {connected ? "Conta PDV+ conectada" : "Conta PDV+"}
+        </h3>
+        <p className="muted" style={{ marginTop: -8, marginBottom: 12 }}>
+          Coloque o e-mail e a senha da sua conta PDV+. Sem homologação. As vendas daqui baixam o estoque.
+        </p>
+        <div className="form two">
+          <label>
+            E-mail da conta PDV+
+            <input
+              type="email"
+              value={conta.email}
+              onChange={(e) => setConta({ ...conta, email: e.target.value })}
+              placeholder="email@pdvplus.com"
+              autoComplete="username"
+            />
+          </label>
+          <label>
+            Senha {hasPassword ? "(já salva, preencha só para trocar)" : ""}
+            <input
+              type="password"
+              value={conta.password}
+              onChange={(e) => setConta({ ...conta, password: e.target.value })}
+              placeholder={hasPassword ? "********" : "Senha do PDV+"}
+              autoComplete="new-password"
+            />
+          </label>
+          <label>
+            CNPJ
+            <input value={conta.cnpj} onChange={(e) => setConta({ ...conta, cnpj: e.target.value })} placeholder="Somente números" />
+          </label>
+          <label>
+            Nome da loja no PDV+
+            <input value={conta.storeName} onChange={(e) => setConta({ ...conta, storeName: e.target.value })} />
+          </label>
+        </div>
+        <label style={{ marginTop: 12 }}>
+          Token / chave de API (se o PDV+ fornecer)
+          <input value={conta.token} onChange={(e) => setConta({ ...conta, token: e.target.value })} placeholder="Opcional" />
+        </label>
+        <div className="row" style={{ marginTop: 12 }}>
+          <Btn
+            className="btn-gold"
+            disabled={busy || !conta.email}
+            onClick={async () => {
+              setBusy(true);
+              setError("");
+              try {
+                const payload = {
+                  email: conta.email,
+                  cnpj: conta.cnpj,
+                  storeName: conta.storeName,
+                  token: conta.token,
+                  connected: true,
+                  lastTestAt: new Date().toISOString(),
+                  lastError: ""
+                };
+                if (conta.password) payload.password = conta.password;
+                const data = await api.updateSettings({ pdvAccount: payload });
+                applyAccount(data);
+                setConta((cur) => ({ ...cur, password: "" }));
+                toast("Conta PDV+ salva. Pode vender no caixa abaixo.");
+                await api.sync();
+                await load();
+              } catch (err) {
+                setError(errorMessage(err));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Salvar e conectar PDV+
+          </Btn>
+        </div>
+      </div>
 
       <div className="pdv-layout">
         <div>

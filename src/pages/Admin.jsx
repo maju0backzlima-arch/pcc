@@ -102,7 +102,17 @@ export default function Admin({ user, search = "" }) {
     targetMultiplier: 2.5,
     soonFactor: 1.25
   });
-  const [pdvSettings, setPdvSettings] = useState({ autoSync: true, simulateSales: false });
+  const [pdvSettings, setPdvSettings] = useState({
+    email: "",
+    password: "",
+    cnpj: "",
+    storeName: "PIC NIC Food Truck Café",
+    token: "",
+    autoSync: true,
+    simulateSales: false,
+    connected: false,
+    hasPassword: false
+  });
   const [account, setAccount] = useState({ name: "", password: "" });
   const settingsReady = useRef(false);
   const draftsRef = useRef({});
@@ -140,18 +150,24 @@ export default function Admin({ user, search = "" }) {
       shopRef.current = next;
       return next;
     });
-    if (!settingsReady.current && data.settings) {
-      settingsReady.current = true;
-      if (data.settings.shopping) {
-        setShopSettings((current) => ({ ...current, ...data.settings.shopping }));
-      }
-      if (data.settings.pdvAccount) {
-        setPdvSettings({
-          autoSync: data.settings.pdvAccount.autoSync !== false,
-          simulateSales: data.settings.pdvAccount.simulateSales === true
-        });
-      }
+    if (data.settings?.shopping && !settingsReady.current) {
+      setShopSettings((current) => ({ ...current, ...data.settings.shopping }));
     }
+    if (data.settings?.pdvAccount) {
+      const acc = data.settings.pdvAccount;
+      setPdvSettings((current) => ({
+        ...current,
+        email: settingsReady.current ? current.email : (acc.email || ""),
+        cnpj: settingsReady.current ? current.cnpj : (acc.cnpj || ""),
+        storeName: settingsReady.current ? current.storeName : (acc.storeName || current.storeName),
+        token: settingsReady.current ? current.token : (acc.token || ""),
+        autoSync: settingsReady.current ? current.autoSync : acc.autoSync !== false,
+        simulateSales: settingsReady.current ? current.simulateSales : acc.simulateSales === true,
+        connected: Boolean(acc.connected),
+        hasPassword: Boolean(acc.hasPassword || acc.password)
+      }));
+    }
+    if (data.settings && !settingsReady.current) settingsReady.current = true;
   }
 
   useEffect(() => {
@@ -1047,8 +1063,48 @@ export default function Admin({ user, search = "" }) {
             </Btn>
           </div>
           <div className="card">
-            <h3>PDV+ e acesso</h3>
-            <label className="check">
+            <h3>
+              <span className={`status-dot ${pdvSettings.connected ? "on" : ""}`} />
+              {pdvSettings.connected ? "Conta PDV+ conectada" : "Conta PDV+"}
+            </h3>
+            <p className="muted" style={{ marginTop: -8, marginBottom: 12 }}>
+              E-mail e senha da sua conta PDV+. Sem homologação.
+            </p>
+            <div className="form two">
+              <label>
+                E-mail da conta PDV+
+                <input
+                  type="email"
+                  value={pdvSettings.email}
+                  onChange={(e) => setPdvSettings({ ...pdvSettings, email: e.target.value })}
+                  placeholder="email@pdvplus.com"
+                  autoComplete="username"
+                />
+              </label>
+              <label>
+                Senha {pdvSettings.hasPassword ? "(já salva, preencha só para trocar)" : ""}
+                <input
+                  type="password"
+                  value={pdvSettings.password}
+                  onChange={(e) => setPdvSettings({ ...pdvSettings, password: e.target.value })}
+                  placeholder={pdvSettings.hasPassword ? "********" : "Senha do PDV+"}
+                  autoComplete="new-password"
+                />
+              </label>
+              <label>
+                CNPJ
+                <input value={pdvSettings.cnpj} onChange={(e) => setPdvSettings({ ...pdvSettings, cnpj: e.target.value })} />
+              </label>
+              <label>
+                Nome da loja no PDV+
+                <input value={pdvSettings.storeName} onChange={(e) => setPdvSettings({ ...pdvSettings, storeName: e.target.value })} />
+              </label>
+            </div>
+            <label style={{ marginTop: 12 }}>
+              Token / chave de API (se o PDV+ fornecer)
+              <input value={pdvSettings.token} onChange={(e) => setPdvSettings({ ...pdvSettings, token: e.target.value })} placeholder="Opcional" />
+            </label>
+            <label className="check" style={{ marginTop: 12 }}>
               <input type="checkbox" checked={pdvSettings.autoSync} onChange={(e) => setPdvSettings({ ...pdvSettings, autoSync: e.target.checked })} />
               Sincronizar sozinho com o PDV+
             </label>
@@ -1060,8 +1116,27 @@ export default function Admin({ user, search = "" }) {
               />
               Simular vendas sozinhas (treino). No dia a dia use o menu PDV.
             </label>
-            <Btn className="btn-gold" style={{ marginTop: 8 }} disabled={busy} onClick={() => run(() => api.updateSettings({ pdvAccount: pdvSettings }), "Ajustes do PDV+ salvos.")}>
-              Salvar PDV+
+            <Btn
+              className="btn-gold"
+              style={{ marginTop: 8 }}
+              disabled={busy || !pdvSettings.email}
+              onClick={() => {
+                const payload = {
+                  email: pdvSettings.email,
+                  cnpj: pdvSettings.cnpj,
+                  storeName: pdvSettings.storeName,
+                  token: pdvSettings.token,
+                  autoSync: pdvSettings.autoSync,
+                  simulateSales: pdvSettings.simulateSales,
+                  connected: true,
+                  lastTestAt: new Date().toISOString(),
+                  lastError: ""
+                };
+                if (pdvSettings.password) payload.password = pdvSettings.password;
+                return run(() => api.updateSettings({ pdvAccount: payload }), "Conta PDV+ salva. Pode vender no menu PDV.");
+              }}
+            >
+              Salvar e conectar PDV+
             </Btn>
             <hr className="soft" />
             <label>

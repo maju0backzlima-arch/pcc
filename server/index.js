@@ -85,12 +85,19 @@ function adminProduct(product) {
   };
 }
 
+function publicSettings(settings) {
+  const pdvAccount = { ...(settings?.pdvAccount || {}) };
+  const hasPassword = Boolean(pdvAccount.password);
+  delete pdvAccount.password;
+  return { ...settings, pdvAccount: { ...pdvAccount, hasPassword } };
+}
+
 function snapshot() {
   const store = withComputed(loadStore());
   return {
     syncedAt: store.settings.pdvAccount.lastSyncAt,
     connected: store.settings.pdvAccount.connected,
-    settings: store.settings,
+    settings: publicSettings(store.settings),
     products: store.products.map(adminProduct),
     ingredients: store.ingredients,
     shoppingList: store.shoppingList,
